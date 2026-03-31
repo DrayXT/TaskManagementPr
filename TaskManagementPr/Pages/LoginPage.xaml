@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:pageModels="clr-namespace:TaskManagementPr.PageModels"
+             xmlns:sf="clr-namespace:Syncfusion.Maui.Toolkit.TextInputLayout;assembly=Syncfusion.Maui.Toolkit"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="TaskManagementPr.Pages.LoginPage"
+             x:DataType="pageModels:LoginPageModel"
+             Shell.NavBarIsVisible="False">
+
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <toolkit:InvertedBoolConverter x:Key="InvertedBoolConverter" />
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <Grid BackgroundColor="{AppThemeBinding Light={StaticResource LightBackground}, Dark={StaticResource DarkBackground}}">
+        <ScrollView VerticalOptions="Center">
+            <VerticalStackLayout Padding="{StaticResource LayoutPadding}" Spacing="16" MaximumWidthRequest="400">
+
+                <Image Source="{StaticResource IconDashboard}"
+                       HeightRequest="64" WidthRequest="64"
+                       HorizontalOptions="Center"
+                       Margin="0,0,0,8" />
+
+                <Label Text="Вход в аккаунт"
+                       Style="{StaticResource Title1}"
+                       HorizontalOptions="Center"
+                       Margin="0,0,0,24" />
+
+                <sf:SfTextInputLayout Hint="Email">
+                    <Entry Text="{Binding Email}"
+                           Keyboard="Email"
+                           ReturnType="Next"
+                           Placeholder="example@mail.com" />
+                </sf:SfTextInputLayout>
+
+                <sf:SfTextInputLayout Hint="Пароль"
+                                      EnablePasswordVisibilityToggle="True">
+                    <Entry Text="{Binding Password}"
+                           IsPassword="True"
+                           ReturnType="Done"
+                           Placeholder="Введите пароль" />
+                </sf:SfTextInputLayout>
+
+                <Label Text="{Binding ErrorMessage}"
+                       TextColor="#FF3300"
+                       Style="{StaticResource Caption1}"
+                       HorizontalOptions="Center"
+                       IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}" />
+
+                <Button Text="Войти"
+                        Command="{Binding SignInCommand}"
+                        IsEnabled="{Binding IsBusy, Converter={StaticResource InvertedBoolConverter}}"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        FontAttributes="Bold"
+                        CornerRadius="12"
+                        HeightRequest="50"
+                        Margin="0,8,0,0" />
+
+                <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                   IsVisible="{Binding IsBusy}"
+                                   Color="{StaticResource Primary}"
+                                   HorizontalOptions="Center" />
+
+                <HorizontalStackLayout HorizontalOptions="Center" Spacing="4" Margin="0,16,0,0">
+                    <Label Text="Нет аккаунта?"
+                           Style="{StaticResource Body2}"
+                           VerticalOptions="Center" />
+                    <Label Text="Зарегистрироваться"
+                           Style="{StaticResource Body2Strong}"
+                           TextColor="{StaticResource Primary}"
+                           VerticalOptions="Center">
+                        <Label.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding GoToRegisterCommand}" />
+                        </Label.GestureRecognizers>
+                    </Label>
+                </HorizontalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+
+</ContentPage>

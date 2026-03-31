@@ -22,7 +22,7 @@ namespace TaskManagementPr.Services
             {
                 await _semaphore.WaitAsync();
                 if (Shell.Current is Shell shell)
-                    await shell.DisplayAlertAsync("Error", ex.Message, "OK");
+                    await shell.DisplayAlert("Error", ex.Message, "OK");
             }
             finally
             {

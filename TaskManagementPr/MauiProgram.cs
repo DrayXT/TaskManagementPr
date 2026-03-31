@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Maui;
+using CommunityToolkit.Maui;
 using Microsoft.Extensions.Logging;
 using Syncfusion.Maui.Toolkit.Hosting;
 
@@ -42,6 +42,15 @@ namespace TaskManagementPr
     		builder.Logging.AddDebug();
     		builder.Services.AddLogging(configure => configure.AddDebug());
 #endif
+
+            var authService = new AuthService();
+            builder.Services.AddSingleton<IAuthService>(authService);
+            builder.Services.AddSingleton<AuthService>(authService);
+
+            builder.Services.AddTransient<LoginPageModel>();
+            builder.Services.AddTransient<RegisterPageModel>();
+            builder.Services.AddTransient<LoginPage>();
+            builder.Services.AddTransient<RegisterPage>();
 
             builder.Services.AddSingleton<ProjectRepository>();
             builder.Services.AddSingleton<TaskRepository>();
