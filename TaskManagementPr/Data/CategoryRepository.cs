@@ -48,7 +48,6 @@ namespace TaskManagementPr.Data
                 _logger.LogError(e, "Error creating Category table");
                 throw;
             }
-
             _hasBeenInitialized = true;
         }
 
