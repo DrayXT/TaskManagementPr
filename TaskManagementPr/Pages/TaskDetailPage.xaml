@@ -6,53 +6,110 @@
              xmlns:models="clr-namespace:TaskManagementPr.Models"
              x:DataType="pageModel:TaskDetailPageModel"
              x:Class="TaskManagementPr.Pages.TaskDetailPage"
-             Title="Task">
+             x:Name="TaskRoot"
+             Title="Задача">
 
     <ContentPage.ToolbarItems>
         <ToolbarItem
-            Text="Delete"
+            Text="Удалить"
             Command="{Binding DeleteCommand}"
             Order="Primary"
             Priority="0"
             IconImageSource="{StaticResource IconDelete}"
-            SemanticProperties.Description="Delete Task" />
-    </ContentPage.ToolbarItems>        
+            SemanticProperties.Description="Удалить задачу" />
+    </ContentPage.ToolbarItems>
 
     <Grid>
         <ScrollView>
             <VerticalStackLayout Spacing="{StaticResource LayoutSpacing}" Padding="{StaticResource LayoutPadding}">
-                <sf:SfTextInputLayout Hint="Task">
-                    <Entry
-                        Text="{Binding Title}"
-                        SemanticProperties.Description="Task" />
+                <Label Text="Основное" Style="{StaticResource Title2}" />
+                <sf:SfTextInputLayout Hint="Что сделать">
+                    <Entry Text="{Binding Title}" Placeholder="Краткое название" />
                 </sf:SfTextInputLayout>
 
-                <sf:SfTextInputLayout Hint="Completed">
-                    <CheckBox
-                        HorizontalOptions="End"
-                        IsChecked="{Binding IsCompleted}"
-                        SemanticProperties.Description="Completed"
-                        SemanticProperties.Hint="Indicates if this task is completed" />
+                <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
+                    <CheckBox IsChecked="{Binding IsCompleted}" VerticalOptions="Center" />
+                    <Label Text="Задача выполнена" VerticalOptions="Center" />
+                </HorizontalStackLayout>
+
+                <Label Text="Срочность" Style="{StaticResource Title2}" Margin="0,8,0,0" />
+                <sf:SfTextInputLayout Hint="Выберите уровень">
+                    <Picker ItemsSource="{Binding PriorityOptions}" SelectedIndex="{Binding PriorityIndex}" />
                 </sf:SfTextInputLayout>
 
-                 <sf:SfTextInputLayout
+                <Label Text="Срок" Style="{StaticResource Title2}" Margin="0,8,0,0" />
+                <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
+                    <CheckBox IsChecked="{Binding HasDueDate}" VerticalOptions="Center" />
+                    <Label Text="Есть дата выполнения" VerticalOptions="Center" />
+                </HorizontalStackLayout>
+                <DatePicker
+                    Date="{Binding DueDatePicker}"
+                    Format="d MMMM yyyy"
+                    IsVisible="{Binding DueDateSectionVisible}"
+                    MinimumDate="2020-01-01"
+                    MaximumDate="2035-12-31" />
+
+                <Label Text="Баллы" Style="{StaticResource Title2}" Margin="0,8,0,0" />
+                <sf:SfTextInputLayout Hint="Максимум баллов (сколько всего можно раздать)">
+                    <Entry Text="{Binding RewardBudgetMaxText}" Keyboard="Numeric" Placeholder="100" />
+                </sf:SfTextInputLayout>
+                <Label Text="По умолчанию 100. Сумма по людям ниже не должна превышать этот максимум."
+                       FontSize="13" LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light=#555555,Dark=#bbbbbb}" />
+                <Label Text="{Binding PointsHint}" FontSize="13" LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light=#444444,Dark=#cccccc}" />
+
+                <Label Text="Проект" Style="{StaticResource Title2}" Margin="0,8,0,0" />
+                <sf:SfTextInputLayout
                     IsVisible="{Binding IsExistingProject}"
-                    SemanticProperties.Description="ComboBox to select Project"
-                    SemanticProperties.Hint="State Collapsed"
-                    Hint="Project">
-                    <Picker 
+                    Hint="Где лежит задача">
+                    <Picker
                         ItemsSource="{Binding Projects}"
                         ItemDisplayBinding="{Binding Name, x:DataType=models:Project}"
                         SelectedItem="{Binding Project}"
-                        SelectedIndex="{Binding SelectedProjectIndex}"
-                        SemanticProperties.Description="Project State Expanded"
-                        SemanticProperties.Hint="Which project this task belongs to"/>
+                        SelectedIndex="{Binding SelectedProjectIndex}" />
                 </sf:SfTextInputLayout>
 
-                <Button 
+                <Label Text="Кто делает и сколько баллов каждому" Style="{StaticResource Title2}" Margin="0,8,0,0" />
+                <Label Text="Любой email — не обязательно из проекта. Введите баллы каждому. Если у нескольких оставить 0, при подсчёте поделится поровну до максимума."
+                       FontSize="13" LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light=#555555,Dark=#bbbbbb}" />
+                <sf:SfTextInputLayout Hint="Email исполнителя">
+                    <Entry Text="{Binding NewAssigneeEmail}" Keyboard="Email" Placeholder="name@example.com" />
+                </sf:SfTextInputLayout>
+                <Button Text="Добавить исполнителя" Command="{Binding AddAssigneeCommand}" />
+
+                <VerticalStackLayout
+                    Spacing="10"
+                    BindableLayout.ItemsSource="{Binding AssignedExecutors}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:AssignedExecutorRow">
+                            <Border StrokeShape="RoundRectangle 12"
+                                    Padding="12"
+                                    Background="{AppThemeBinding Light={StaticResource LightSecondaryBackground},Dark={StaticResource DarkSecondaryBackground}}">
+                                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="8">
+                                    <Label Grid.Row="0" Grid.Column="0" Text="{Binding Email}" FontAttributes="Bold" />
+                                    <Button Grid.Row="0" Grid.Column="1" Text="Убрать"
+                                            Command="{Binding Source={x:Reference TaskRoot}, Path=BindingContext.RemoveAssigneeCommand}"
+                                            CommandParameter="{Binding .}" />
+                                    <sf:SfTextInputLayout Grid.Row="1" Grid.ColumnSpan="2" Hint="Баллов этому человеку">
+                                        <Entry Text="{Binding PointsText}" Keyboard="Numeric" Placeholder="0" />
+                                    </sf:SfTextInputLayout>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+                <Button
+                    Text="Убрать задачу из проекта"
+                    Command="{Binding RemoveFromProjectCommand}"
+                    IsVisible="{Binding CanDelete}" />
+
+                <Button
                     MinimumHeightRequest="{OnIdiom 44, Desktop=60}"
-                    Text="Save"
-                    Command="{Binding SaveCommand}"/>
+                    Text="Сохранить"
+                    Command="{Binding SaveCommand}" />
             </VerticalStackLayout>
         </ScrollView>
     </Grid>

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:pageModels="clr-namespace:TaskManagementPr.PageModels"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="TaskManagementPr.Pages.StatisticsPage"
+             x:Name="StatsRoot"
+             x:DataType="pageModels:StatisticsPageModel"
+             Title="Статистика">
+
+    <ContentPage.Behaviors>
+        <toolkit:EventToCommandBehavior
+            BindingContext="{Binding Path=BindingContext, Source={x:Reference StatsRoot}, x:DataType=ContentPage}"
+            EventName="Appearing"
+            Command="{Binding AppearingCommand}" />
+        <toolkit:EventToCommandBehavior
+            BindingContext="{Binding Path=BindingContext, Source={x:Reference StatsRoot}, x:DataType=ContentPage}"
+            EventName="NavigatedTo"
+            Command="{Binding NavigatedToCommand}" />
+    </ContentPage.Behaviors>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="{StaticResource LayoutPadding}" Spacing="{StaticResource LayoutSpacing}">
+            <Label Text="Профиль" Style="{StaticResource Title2}" />
+            <Label Text="{Binding CurrentUserDisplay}" FontSize="16" />
+
+            <Label Text="Личная статистика" Style="{StaticResource Title2}" Margin="0,12,0,0" />
+            <Label>
+                <Label.FormattedText>
+                    <FormattedString>
+                        <Span Text="Завершённых задач: " />
+                        <Span Text="{Binding PersonalTasksCompleted}" FontAttributes="Bold" />
+                    </FormattedString>
+                </Label.FormattedText>
+            </Label>
+            <Label>
+                <Label.FormattedText>
+                    <FormattedString>
+                        <Span Text="Заработано баллов: " />
+                        <Span Text="{Binding PersonalPoints}" FontAttributes="Bold" />
+                    </FormattedString>
+                </Label.FormattedText>
+            </Label>
+
+            <Label Text="Команда (общие проекты)" Style="{StaticResource Title2}" Margin="0,12,0,0" />
+            <Label Text="Проекты с двумя и более участниками. Если у задачи несколько исполнителей — баллы в рейтинге делятся между ними поровну."
+                   FontSize="13" LineBreakMode="WordWrap"
+                   TextColor="{AppThemeBinding Light=#555,Dark=#bbb}" />
+            <Label>
+                <Label.FormattedText>
+                    <FormattedString>
+                        <Span Text="Завершённых задач (всего): " />
+                        <Span Text="{Binding TeamCompletedTasksInShared}" FontAttributes="Bold" />
+                    </FormattedString>
+                </Label.FormattedText>
+            </Label>
+            <Label>
+                <Label.FormattedText>
+                    <FormattedString>
+                        <Span Text="Сумма баллов по задачам: " />
+                        <Span Text="{Binding TeamPointsInShared}" FontAttributes="Bold" />
+                    </FormattedString>
+                </Label.FormattedText>
+            </Label>
+
+            <Label Text="Рейтинг по баллам (общие проекты)" Style="{StaticResource Title2}" Margin="0,8,0,0" />
+            <CollectionView ItemsSource="{Binding TeamLeaderboard}" EmptyView="Нет данных">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="pageModels:MemberStatRow">
+                        <Grid Padding="0,6" ColumnDefinitions="*,Auto">
+                            <Label Grid.Column="0" Text="{Binding Email}" />
+                            <Label Grid.Column="1" Text="{Binding Points}" FontAttributes="Bold" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <Label Text="Участники общих проектов" Style="{StaticResource Title2}" Margin="0,16,0,0" />
+            <CollectionView ItemsSource="{Binding SharedProjects}" EmptyView="Нет общих проектов">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="pageModels:SharedProjectRow">
+                        <VerticalStackLayout Padding="0,8" Spacing="4">
+                            <Label Text="{Binding ProjectName}" FontAttributes="Bold" />
+                            <Label Text="{Binding MembersSummary}" FontSize="14" />
+                        </VerticalStackLayout>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

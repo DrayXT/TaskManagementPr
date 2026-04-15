@@ -4,32 +4,26 @@ using TaskManagementPr.Models;
 
 namespace TaskManagementPr.Data
 {
-    /// <summary>
-    /// Repository class for managing projects in the database.
-    /// </summary>
     public class ProjectRepository
     {
-        private bool _hasBeenInitialized = false;
+        private bool _hasBeenInitialized;
         private readonly ILogger _logger;
         private readonly TaskRepository _taskRepository;
         private readonly TagRepository _tagRepository;
+        private readonly ProjectMemberRepository _projectMemberRepository;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ProjectRepository"/> class.
-        /// </summary>
-        /// <param name="taskRepository">The task repository instance.</param>
-        /// <param name="tagRepository">The tag repository instance.</param>
-        /// <param name="logger">The logger instance.</param>
-        public ProjectRepository(TaskRepository taskRepository, TagRepository tagRepository, ILogger<ProjectRepository> logger)
+        public ProjectRepository(
+            TaskRepository taskRepository,
+            TagRepository tagRepository,
+            ProjectMemberRepository projectMemberRepository,
+            ILogger<ProjectRepository> logger)
         {
             _taskRepository = taskRepository;
             _tagRepository = tagRepository;
+            _projectMemberRepository = projectMemberRepository;
             _logger = logger;
         }
 
-        /// <summary>
-        /// Initializes the database connection and creates the Project table if it does not exist.
-        /// </summary>
         private async Task Init()
         {
             if (_hasBeenInitialized)
@@ -42,13 +36,13 @@ namespace TaskManagementPr.Data
             {
                 var createTableCmd = connection.CreateCommand();
                 createTableCmd.CommandText = @"
-            CREATE TABLE IF NOT EXISTS Project (
-                ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                Name TEXT NOT NULL,
-                Description TEXT NOT NULL,
-                Icon TEXT NOT NULL,
-                CategoryID INTEGER NOT NULL
-            );";
+CREATE TABLE IF NOT EXISTS Project (
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Name TEXT NOT NULL,
+    Description TEXT NOT NULL,
+    Icon TEXT NOT NULL,
+    CategoryID INTEGER NOT NULL
+);";
                 await createTableCmd.ExecuteNonQueryAsync();
             }
             catch (Exception e)
@@ -60,10 +54,13 @@ namespace TaskManagementPr.Data
             _hasBeenInitialized = true;
         }
 
-        /// <summary>
-        /// Retrieves a list of all projects from the database.
-        /// </summary>
-        /// <returns>A list of <see cref="Project"/> objects.</returns>
+        private async Task HydrateProjectAsync(Project project)
+        {
+            project.Tags = await _tagRepository.ListAsync(project.ID);
+            project.Tasks = await _taskRepository.ListAsync(project.ID);
+            project.Members = await _projectMemberRepository.ListByProjectAsync(project.ID);
+        }
+
         public async Task<List<Project>> ListAsync()
         {
             await Init();
@@ -88,19 +85,11 @@ namespace TaskManagementPr.Data
             }
 
             foreach (var project in projects)
-            {
-                project.Tags = await _tagRepository.ListAsync(project.ID);
-                project.Tasks = await _taskRepository.ListAsync(project.ID);
-            }
+                await HydrateProjectAsync(project);
 
             return projects;
         }
 
-        /// <summary>
-        /// Retrieves a specific project by its ID.
-        /// </summary>
-        /// <param name="id">The ID of the project.</param>
-        /// <returns>A <see cref="Project"/> object if found; otherwise, null.</returns>
         public async Task<Project?> GetAsync(int id)
         {
             await Init();
@@ -112,31 +101,22 @@ namespace TaskManagementPr.Data
             selectCmd.Parameters.AddWithValue("@id", id);
 
             await using var reader = await selectCmd.ExecuteReaderAsync();
-            if (await reader.ReadAsync())
+            if (!await reader.ReadAsync())
+                return null;
+
+            var project = new Project
             {
-                var project = new Project
-                {
-                    ID = reader.GetInt32(0),
-                    Name = reader.GetString(1),
-                    Description = reader.GetString(2),
-                    Icon = reader.GetString(3),
-                    CategoryID = reader.GetInt32(4)
-                };
+                ID = reader.GetInt32(0),
+                Name = reader.GetString(1),
+                Description = reader.GetString(2),
+                Icon = reader.GetString(3),
+                CategoryID = reader.GetInt32(4)
+            };
 
-                project.Tags = await _tagRepository.ListAsync(project.ID);
-                project.Tasks = await _taskRepository.ListAsync(project.ID);
-
-                return project;
-            }
-
-            return null;
+            await HydrateProjectAsync(project);
+            return project;
         }
 
-        /// <summary>
-        /// Saves a project to the database. If the project ID is 0, a new project is created; otherwise, the existing project is updated.
-        /// </summary>
-        /// <param name="item">The project to save.</param>
-        /// <returns>The ID of the saved project.</returns>
         public async Task<int> SaveItemAsync(Project item)
         {
             await Init();
@@ -147,16 +127,16 @@ namespace TaskManagementPr.Data
             if (item.ID == 0)
             {
                 saveCmd.CommandText = @"
-                INSERT INTO Project (Name, Description, Icon, CategoryID)
-                VALUES (@Name, @Description, @Icon, @CategoryID);
-                SELECT last_insert_rowid();";
+INSERT INTO Project (Name, Description, Icon, CategoryID)
+VALUES (@Name, @Description, @Icon, @CategoryID);
+SELECT last_insert_rowid();";
             }
             else
             {
                 saveCmd.CommandText = @"
-                UPDATE Project
-                SET Name = @Name, Description = @Description, Icon = @Icon, CategoryID = @CategoryID
-                WHERE ID = @ID";
+UPDATE Project
+SET Name = @Name, Description = @Description, Icon = @Icon, CategoryID = @CategoryID
+WHERE ID = @ID";
                 saveCmd.Parameters.AddWithValue("@ID", item.ID);
             }
 
@@ -167,23 +147,24 @@ namespace TaskManagementPr.Data
 
             var result = await saveCmd.ExecuteScalarAsync();
             if (item.ID == 0)
-            {
                 item.ID = Convert.ToInt32(result);
-            }
 
             return item.ID;
         }
 
-        /// <summary>
-        /// Deletes a project from the database.
-        /// </summary>
-        /// <param name="item">The project to delete.</param>
-        /// <returns>The number of rows affected.</returns>
         public async Task<int> DeleteItemAsync(Project item)
         {
             await Init();
+            await _taskRepository.DeleteAllForProjectAsync(item.ID);
+            await _projectMemberRepository.DeleteAllForProjectAsync(item.ID);
+
             await using var connection = new SqliteConnection(Constants.DatabasePath);
             await connection.OpenAsync();
+
+            var delTags = connection.CreateCommand();
+            delTags.CommandText = "DELETE FROM ProjectsTags WHERE ProjectID = @ID";
+            delTags.Parameters.AddWithValue("@ID", item.ID);
+            await delTags.ExecuteNonQueryAsync();
 
             var deleteCmd = connection.CreateCommand();
             deleteCmd.CommandText = "DELETE FROM Project WHERE ID = @ID";
@@ -192,21 +173,20 @@ namespace TaskManagementPr.Data
             return await deleteCmd.ExecuteNonQueryAsync();
         }
 
-        /// <summary>
-        /// Drops the Project table from the database.
-        /// </summary>
         public async Task DropTableAsync()
         {
             await Init();
+
+            await _projectMemberRepository.DropTableAsync();
+            await _tagRepository.DropTableAsync();
+            await _taskRepository.DropTableAsync();
+
             await using var connection = new SqliteConnection(Constants.DatabasePath);
             await connection.OpenAsync();
 
             var dropCmd = connection.CreateCommand();
             dropCmd.CommandText = "DROP TABLE IF EXISTS Project";
             await dropCmd.ExecuteNonQueryAsync();
-
-            await _taskRepository.DropTableAsync();
-            await _tagRepository.DropTableAsync();
             _hasBeenInitialized = false;
         }
     }
