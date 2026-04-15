@@ -60,6 +60,12 @@
                                 HorizontalOptions="Start"
                                 LineBreakMode="WordWrap" />
                             <Label
+                                Text="{Binding Description}"
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                IsVisible="{Binding HasDescription}"
+                                TextColor="{AppThemeBinding Light=#444444,Dark=#d0d0d0}" />
+                            <Label
                                 Text="{Binding Subtitle}"
                                 FontSize="12"
                                 TextColor="{AppThemeBinding Light=#555555,Dark=#bbbbbb}"

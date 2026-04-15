@@ -26,6 +26,12 @@
                 <sf:SfTextInputLayout Hint="Что сделать">
                     <Entry Text="{Binding Title}" Placeholder="Краткое название" />
                 </sf:SfTextInputLayout>
+                <sf:SfTextInputLayout Hint="Описание">
+                    <Editor Text="{Binding Description}"
+                            Placeholder="Необязательно: детали задачи"
+                            AutoSize="TextChanges"
+                            MinimumHeightRequest="90" />
+                </sf:SfTextInputLayout>
 
                 <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
                     <CheckBox IsChecked="{Binding IsCompleted}" VerticalOptions="Center" />

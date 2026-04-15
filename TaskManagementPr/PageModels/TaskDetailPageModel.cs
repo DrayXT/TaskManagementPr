@@ -21,6 +21,9 @@ namespace TaskManagementPr.PageModels
         private string _title = string.Empty;
 
         [ObservableProperty]
+        private string _description = string.Empty;
+
+        [ObservableProperty]
         private bool _isCompleted;
 
         /// <summary>Максимум баллов (бюджет), по умолчанию 100 — вводится в поле.</summary>
@@ -151,6 +154,7 @@ namespace TaskManagementPr.PageModels
                 }
 
                 Title = _task.Title;
+                Description = _task.Description;
                 IsCompleted = _task.IsCompleted;
                 RewardBudgetMaxText = (_task.RewardPoints > 0 ? _task.RewardPoints : 100).ToString();
                 HasDueDate = _task.DueDate.HasValue;
@@ -343,6 +347,7 @@ namespace TaskManagementPr.PageModels
             sum = AssignedExecutors.Sum(r => r.GetParsedPoints());
 
             _task.Title = Title;
+            _task.Description = Description?.Trim() ?? string.Empty;
             _task.IsCompleted = IsCompleted;
             _task.RewardPoints = max;
             _task.DueDate = HasDueDate ? DueDatePicker.Date : null;

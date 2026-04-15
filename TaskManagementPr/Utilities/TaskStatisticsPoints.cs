@@ -4,6 +4,18 @@ namespace TaskManagementPr.Utilities
 {
     public static class TaskStatisticsPoints
     {
+        public static string? GetFallbackRecipientEmail(IReadOnlyList<ProjectMember> activeMembers)
+        {
+            var owner = activeMembers.FirstOrDefault(m => m.IsOwner && !m.IsPending)?.UserEmail;
+            if (!string.IsNullOrWhiteSpace(owner))
+                return owner.Trim().ToLowerInvariant();
+
+            if (activeMembers.Count == 1)
+                return activeMembers[0].UserEmail.Trim().ToLowerInvariant();
+
+            return null;
+        }
+
         /// <summary>Есть ли явное (ненулевое) распределение по исполнителям.</summary>
         public static bool HasExplicitShares(ProjectTask task)
         {
@@ -41,40 +53,56 @@ namespace TaskManagementPr.Utilities
             return TaskPointsSplit.ShareForEmail(task.AssigneeEmails.ToList(), task.RewardPoints, normalizedEmail);
         }
 
+        public static Dictionary<string, int> GetAwardedPoints(ProjectTask task, IReadOnlyList<ProjectMember> activeMembers)
+        {
+            var awarded = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            if (task.AssigneeEmails.Count > 0)
+            {
+                if (HasExplicitShares(task))
+                {
+                    foreach (var email in task.AssigneeEmails.Distinct(StringComparer.OrdinalIgnoreCase))
+                    {
+                        var key = email.Trim().ToLowerInvariant();
+                        var points = PointsForAssignee(task, key);
+                        if (points <= 0)
+                            continue;
+
+                        awarded[key] = points;
+                    }
+
+                    return awarded;
+                }
+
+                var shares = TaskPointsSplit.SharesForAssignees(
+                    task.AssigneeEmails.ToList(),
+                    task.RewardPoints,
+                    StringComparer.OrdinalIgnoreCase);
+                foreach (var kv in shares)
+                {
+                    if (kv.Value <= 0)
+                        continue;
+
+                    awarded[kv.Key] = kv.Value;
+                }
+
+                return awarded;
+            }
+
+            var fallback = GetFallbackRecipientEmail(activeMembers);
+            if (string.IsNullOrWhiteSpace(fallback) || task.RewardPoints <= 0)
+                return awarded;
+
+            awarded[fallback] = task.RewardPoints;
+            return awarded;
+        }
+
         public static void AddTeamBoardEntries(
             ProjectTask task,
             Dictionary<string, int> board,
             IReadOnlyList<ProjectMember> activeMembers)
         {
-            if (task.AssigneeEmails.Count == 0)
-            {
-                foreach (var m in activeMembers)
-                {
-                    board.TryGetValue(m.UserEmail, out var v);
-                    board[m.UserEmail] = v + task.RewardPoints;
-                }
-
-                return;
-            }
-
-            if (HasExplicitShares(task))
-            {
-                foreach (var email in task.AssigneeEmails)
-                {
-                    var pts = PointsForAssignee(task, email.Trim().ToLowerInvariant());
-                    var key = email.Trim().ToLowerInvariant();
-                    board.TryGetValue(key, out var cur);
-                    board[key] = cur + pts;
-                }
-
-                return;
-            }
-
-            var shares = TaskPointsSplit.SharesForAssignees(
-                task.AssigneeEmails.ToList(),
-                task.RewardPoints,
-                StringComparer.OrdinalIgnoreCase);
-            foreach (var kv in shares)
+            foreach (var kv in GetAwardedPoints(task, activeMembers))
             {
                 board.TryGetValue(kv.Key, out var v);
                 board[kv.Key] = v + kv.Value;

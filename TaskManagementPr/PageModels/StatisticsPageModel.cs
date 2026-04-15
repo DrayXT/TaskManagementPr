@@ -24,6 +24,9 @@ namespace TaskManagementPr.PageModels
 
     public partial class StatisticsPageModel : ObservableObject
     {
+        /// <summary>Совпадает с запасным владельцем в <see cref="ProjectMemberRepository"/> при отсутствии email.</summary>
+        private const string LocalOwnerPlaceholderEmail = "local@owner.app";
+
         private readonly ProjectRepository _projectRepository;
         private readonly ProjectMemberRepository _projectMemberRepository;
         private readonly IAuthService _authService;
@@ -78,6 +81,66 @@ namespace TaskManagementPr.PageModels
         private static string? Normalize(string? email) =>
             string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
 
+        /// <summary>Один активный участник — запасной локальный владелец (проект создан до входа в аккаунт).</summary>
+        private static bool IsLegacyLocalOnlyPlaceholder(IReadOnlyList<ProjectMember> activeMembers) =>
+            activeMembers.Count == 1 &&
+            activeMembers[0].UserEmail.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Показывать проект в личной статистике: вы в участниках, вы назначены на задачу или это локальный проект владельца до входа.</summary>
+        private bool ShouldIncludeProject(string me, IReadOnlyList<ProjectMember> activeMembers, IReadOnlyList<ProjectTask> tasks)
+        {
+            if (activeMembers.Count == 0)
+                return true;
+
+            if (activeMembers.Any(m => m.UserEmail.Equals(me, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            if (tasks.Any(t => t.AssigneeEmails.Any(e => e.Equals(me, StringComparison.OrdinalIgnoreCase))))
+                return true;
+
+            var loggedIn = Normalize(_authService.CurrentUserEmail);
+            if (loggedIn is null || loggedIn.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return IsLegacyLocalOnlyPlaceholder(activeMembers);
+        }
+
+        private static string NormalizeForBoard(string email) =>
+            email.Trim().ToLowerInvariant();
+
+        private static string NormalizeBoardKey(
+            string email,
+            string me,
+            bool treatLegacyOwnerAsCurrentUser)
+        {
+            if (treatLegacyOwnerAsCurrentUser &&
+                email.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                return me;
+            }
+
+            return NormalizeForBoard(email);
+        }
+
+        private static int GetPersonalPoints(
+            string me,
+            ProjectTask task,
+            IReadOnlyDictionary<string, int> awardedPoints,
+            bool treatLegacyOwnerAsCurrentUser)
+        {
+            if (awardedPoints.TryGetValue(me, out var points))
+                return points;
+
+            if (treatLegacyOwnerAsCurrentUser &&
+                task.AssigneeEmails.Count == 0 &&
+                awardedPoints.TryGetValue(LocalOwnerPlaceholderEmail, out var legacyPoints))
+            {
+                return legacyPoints;
+            }
+
+            return 0;
+        }
+
         [RelayCommand]
         private async Task Appearing()
         {
@@ -113,11 +176,15 @@ namespace TaskManagementPr.PageModels
                 foreach (var project in projects)
                 {
                     var activeMembers = project.Members.Where(m => !m.IsPending).ToList();
-                    if (activeMembers.Count > 0 &&
-                        !activeMembers.Any(m => m.UserEmail.Equals(me, StringComparison.OrdinalIgnoreCase)))
-                    {
+                    if (!ShouldIncludeProject(me, activeMembers, project.Tasks))
                         continue;
-                    }
+
+                    var legacyOwnerAlias = IsLegacyLocalOnlyPlaceholder(activeMembers) &&
+                        !me.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase);
+                    var namedUserInMembers = activeMembers.Any(m =>
+                        m.UserEmail.Equals(me, StringComparison.OrdinalIgnoreCase));
+                    var noAssigneeTaskCountsForPersonal = activeMembers.Count == 0 || namedUserInMembers ||
+                        legacyOwnerAlias;
 
                     var isShared = activeMembers.Count >= 2;
                     if (isShared)
@@ -133,22 +200,25 @@ namespace TaskManagementPr.PageModels
 
                     foreach (var task in project.Tasks.Where(t => t.IsCompleted))
                     {
-                        if (IsPersonalCredit(task, me, activeMembers))
+                        var awardedPoints = TaskStatisticsPoints.GetAwardedPoints(task, activeMembers);
+                        if (IsPersonalCredit(task, me, noAssigneeTaskCountsForPersonal, awardedPoints, legacyOwnerAlias))
                         {
                             personalTasks++;
-                            if (task.AssigneeEmails.Count > 0)
-                                personalPoints += TaskStatisticsPoints.PointsForAssignee(task, me);
-                            else
-                                personalPoints += task.RewardPoints;
+                            personalPoints += GetPersonalPoints(me, task, awardedPoints, legacyOwnerAlias);
                         }
 
                         if (!isShared)
                             continue;
 
                         teamTasks++;
-                        teamPoints += task.RewardPoints;
+                        teamPoints += awardedPoints.Values.Sum();
 
-                        TaskStatisticsPoints.AddTeamBoardEntries(task, board, activeMembers);
+                        foreach (var kv in awardedPoints)
+                        {
+                            var key = NormalizeBoardKey(kv.Key, me, legacyOwnerAlias);
+                            board.TryGetValue(key, out var current);
+                            board[key] = current + kv.Value;
+                        }
                     }
                 }
 
@@ -173,13 +243,21 @@ namespace TaskManagementPr.PageModels
             }
         }
 
-        private static bool IsPersonalCredit(ProjectTask task, string me, List<ProjectMember> activeMembers)
+        private static bool IsPersonalCredit(
+            ProjectTask task,
+            string me,
+            bool noAssigneeTaskCountsForPersonal,
+            IReadOnlyDictionary<string, int> awardedPoints,
+            bool treatLegacyOwnerAsCurrentUser)
         {
             if (task.AssigneeEmails.Count > 0)
                 return task.AssigneeEmails.Any(e => e.Equals(me, StringComparison.OrdinalIgnoreCase));
 
-            return activeMembers.Count == 0 ||
-                   activeMembers.Any(m => m.UserEmail.Equals(me, StringComparison.OrdinalIgnoreCase));
+            if (noAssigneeTaskCountsForPersonal)
+                return true;
+
+            return treatLegacyOwnerAsCurrentUser &&
+                awardedPoints.ContainsKey(LocalOwnerPlaceholderEmail);
         }
     }
 }

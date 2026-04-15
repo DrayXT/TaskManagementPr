@@ -6,6 +6,7 @@ namespace TaskManagementPr.Models
     {
         public int ID { get; set; }
         public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
         public bool IsCompleted { get; set; }
 
         [JsonIgnore]
@@ -25,6 +26,9 @@ namespace TaskManagementPr.Models
         public Dictionary<string, int> AssigneePointShares { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         [JsonIgnore]
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    [JsonIgnore]
         public string PriorityLabel => Priority switch
         {
             TaskPriority.Low => "Низкий",
