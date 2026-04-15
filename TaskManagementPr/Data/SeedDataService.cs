@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using TaskManagementPr.Models;
+using TaskManagementPr.Services;
 
 namespace TaskManagementPr.Data
 {
@@ -10,21 +11,32 @@ namespace TaskManagementPr.Data
         private readonly TaskRepository _taskRepository;
         private readonly TagRepository _tagRepository;
         private readonly CategoryRepository _categoryRepository;
+        private readonly ProjectMemberRepository _projectMemberRepository;
+        private readonly IAuthService _authService;
         private readonly string _seedDataFilePath = "SeedData.json";
         private readonly ILogger<SeedDataService> _logger;
 
-        public SeedDataService(ProjectRepository projectRepository, TaskRepository taskRepository, TagRepository tagRepository, CategoryRepository categoryRepository, ILogger<SeedDataService> logger)
+        public SeedDataService(
+            ProjectRepository projectRepository,
+            TaskRepository taskRepository,
+            TagRepository tagRepository,
+            CategoryRepository categoryRepository,
+            ProjectMemberRepository projectMemberRepository,
+            IAuthService authService,
+            ILogger<SeedDataService> logger)
         {
             _projectRepository = projectRepository;
             _taskRepository = taskRepository;
             _tagRepository = tagRepository;
             _categoryRepository = categoryRepository;
+            _projectMemberRepository = projectMemberRepository;
+            _authService = authService;
             _logger = logger;
         }
 
         public async Task LoadSeedDataAsync()
         {
-            ClearTables();
+            await ClearTablesAsync();
 
             await using Stream templateStream = await FileSystem.OpenAppPackageFileAsync(_seedDataFilePath);
 
@@ -56,6 +68,7 @@ namespace TaskManagementPr.Data
                         }
 
                         await _projectRepository.SaveItemAsync(project);
+                        await _projectMemberRepository.EnsureOwnerAsync(project.ID, _authService.CurrentUserEmail);
 
                         if (project?.Tasks is not null)
                         {
@@ -83,15 +96,12 @@ namespace TaskManagementPr.Data
             }
         }
 
-        private async void ClearTables()
+        private async Task ClearTablesAsync()
         {
             try
             {
-                await Task.WhenAll(
-                    _projectRepository.DropTableAsync(),
-                    _taskRepository.DropTableAsync(),
-                    _tagRepository.DropTableAsync(),
-                    _categoryRepository.DropTableAsync());
+                await _projectRepository.DropTableAsync();
+                await _categoryRepository.DropTableAsync();
             }
             catch (Exception e)
             {

@@ -1,6 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
+using TaskManagementPr.Data;
+using TaskManagementPr.Messaging;
 using TaskManagementPr.Models;
+using TaskManagementPr.Services;
 
 namespace TaskManagementPr.PageModels
 {
@@ -11,6 +15,8 @@ namespace TaskManagementPr.PageModels
         private readonly ProjectRepository _projectRepository;
         private readonly TaskRepository _taskRepository;
         private readonly CategoryRepository _categoryRepository;
+        private readonly ProjectMemberRepository _projectMemberRepository;
+        private readonly IAuthService _authService;
         private readonly ModalErrorHandler _errorHandler;
         private readonly SeedDataService _seedDataService;
 
@@ -41,12 +47,20 @@ namespace TaskManagementPr.PageModels
         public bool HasCompletedTasks
             => Tasks?.Any(t => t.IsCompleted) ?? false;
 
-        public MainPageModel(SeedDataService seedDataService, ProjectRepository projectRepository,
-            TaskRepository taskRepository, CategoryRepository categoryRepository, ModalErrorHandler errorHandler)
+        public MainPageModel(
+            SeedDataService seedDataService,
+            ProjectRepository projectRepository,
+            TaskRepository taskRepository,
+            CategoryRepository categoryRepository,
+            ProjectMemberRepository projectMemberRepository,
+            IAuthService authService,
+            ModalErrorHandler errorHandler)
         {
             _projectRepository = projectRepository;
             _taskRepository = taskRepository;
             _categoryRepository = categoryRepository;
+            _projectMemberRepository = projectMemberRepository;
+            _authService = authService;
             _errorHandler = errorHandler;
             _seedDataService = seedDataService;
         }
@@ -56,6 +70,8 @@ namespace TaskManagementPr.PageModels
             try
             {
                 IsBusy = true;
+
+                await _projectMemberRepository.ActivatePendingForEmailAsync(_authService.CurrentUserEmail);
 
                 Projects = await _projectRepository.ListAsync();
 
@@ -141,10 +157,12 @@ namespace TaskManagementPr.PageModels
         }
 
         [RelayCommand]
-        private Task TaskCompleted(ProjectTask task)
+        private async Task TaskCompleted(ProjectTask task)
         {
+            await _taskRepository.SaveItemAsync(task);
+            WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             OnPropertyChanged(nameof(HasCompletedTasks));
-            return _taskRepository.SaveItemAsync(task);
+            Tasks = await _taskRepository.ListAsync();
         }
 
         [RelayCommand]
@@ -169,6 +187,7 @@ namespace TaskManagementPr.PageModels
                 Tasks.Remove(task);
             }
 
+            WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             OnPropertyChanged(nameof(HasCompletedTasks));
             Tasks = new(Tasks);
             await AppShell.DisplayToastAsync("All cleaned up!");

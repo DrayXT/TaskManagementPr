@@ -21,6 +21,12 @@
         Route="projects" />
 
     <ShellContent
+        Title="Статистика"
+        Icon="{StaticResource IconStatistics}"
+        ContentTemplate="{DataTemplate pages:StatisticsPage}"
+        Route="statistics" />
+
+    <ShellContent
         Title="Manage Meta"
         Icon="{StaticResource IconMeta}"
         ContentTemplate="{DataTemplate pages:ManageMetaPage}"

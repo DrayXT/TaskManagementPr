@@ -18,6 +18,9 @@ namespace TaskManagementPr.Models
 
         public List<Tag> Tags { get; set; } = [];
 
+        [JsonIgnore]
+        public List<ProjectMember> Members { get; set; } = [];
+
         public string AccessibilityDescription
         {
             get { return $"{Name} Project. {Description}"; }

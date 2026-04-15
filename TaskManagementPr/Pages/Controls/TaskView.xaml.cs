@@ -22,6 +22,18 @@ namespace TaskManagementPr.Pages.Controls
             set => SetValue(TaskCompletedCommandProperty, value);
         }
 
+        public static readonly BindableProperty ShowQuickCompleteButtonProperty = BindableProperty.Create(
+            nameof(ShowQuickCompleteButton),
+            typeof(bool),
+            typeof(TaskView),
+            false);
+
+        public bool ShowQuickCompleteButton
+        {
+            get => (bool)GetValue(ShowQuickCompleteButtonProperty);
+            set => SetValue(ShowQuickCompleteButtonProperty, value);
+        }
+
         private void CheckBox_CheckedChanged(object? sender, CheckedChangedEventArgs e)
         {
             var checkbox = (CheckBox?)sender;
@@ -33,6 +45,18 @@ namespace TaskManagementPr.Pages.Controls
                 return;
 
             task.IsCompleted = e.Value;
+            TaskCompletedCommand?.Execute(task);
+        }
+
+        private void QuickComplete_OnClicked(object? sender, EventArgs e)
+        {
+            if (BindingContext is not ProjectTask task)
+                return;
+
+            if (task.IsCompleted)
+                return;
+
+            task.IsCompleted = true;
             TaskCompletedCommand?.Execute(task);
         }
     }

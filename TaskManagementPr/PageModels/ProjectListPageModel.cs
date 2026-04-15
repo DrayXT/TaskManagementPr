@@ -9,6 +9,8 @@ namespace TaskManagementPr.PageModels
     public partial class ProjectListPageModel : ObservableObject
     {
         private readonly ProjectRepository _projectRepository;
+        private readonly ProjectMemberRepository _projectMemberRepository;
+        private readonly IAuthService _authService;
 
         [ObservableProperty]
         private List<Project> _projects = [];
@@ -16,14 +18,20 @@ namespace TaskManagementPr.PageModels
         [ObservableProperty]
         private Project? selectedProject;
 
-        public ProjectListPageModel(ProjectRepository projectRepository)
+        public ProjectListPageModel(
+            ProjectRepository projectRepository,
+            ProjectMemberRepository projectMemberRepository,
+            IAuthService authService)
         {
             _projectRepository = projectRepository;
+            _projectMemberRepository = projectMemberRepository;
+            _authService = authService;
         }
 
         [RelayCommand]
         private async Task Appearing()
         {
+            await _projectMemberRepository.ActivatePendingForEmailAsync(_authService.CurrentUserEmail);
             Projects = await _projectRepository.ListAsync();
         }
 

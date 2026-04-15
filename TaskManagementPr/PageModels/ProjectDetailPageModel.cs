@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
-using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
+using TaskManagementPr.Data;
+using TaskManagementPr.Messaging;
 using TaskManagementPr.Models;
+using TaskManagementPr.Services;
 
 namespace TaskManagementPr.PageModels
 {
@@ -13,6 +16,8 @@ namespace TaskManagementPr.PageModels
         private readonly TaskRepository _taskRepository;
         private readonly CategoryRepository _categoryRepository;
         private readonly TagRepository _tagRepository;
+        private readonly ProjectMemberRepository _projectMemberRepository;
+        private readonly IAuthService _authService;
         private readonly ModalErrorHandler _errorHandler;
 
         [ObservableProperty]
@@ -23,6 +28,18 @@ namespace TaskManagementPr.PageModels
 
         [ObservableProperty]
         private List<ProjectTask> _tasks = [];
+
+        [ObservableProperty]
+        private ObservableCollection<ProjectMember> _members = [];
+
+        [ObservableProperty]
+        private bool _isCurrentUserOwner;
+
+        [ObservableProperty]
+        private bool _hasPersistedProject;
+
+        [ObservableProperty]
+        private bool _canManageMembers;
 
         [ObservableProperty]
         private List<Category> _categories = [];
@@ -71,12 +88,21 @@ namespace TaskManagementPr.PageModels
         public bool HasCompletedTasks
             => _project?.Tasks.Any(t => t.IsCompleted) ?? false;
 
-        public ProjectDetailPageModel(ProjectRepository projectRepository, TaskRepository taskRepository, CategoryRepository categoryRepository, TagRepository tagRepository, ModalErrorHandler errorHandler)
+        public ProjectDetailPageModel(
+            ProjectRepository projectRepository,
+            TaskRepository taskRepository,
+            CategoryRepository categoryRepository,
+            TagRepository tagRepository,
+            ProjectMemberRepository projectMemberRepository,
+            IAuthService authService,
+            ModalErrorHandler errorHandler)
         {
             _projectRepository = projectRepository;
             _taskRepository = taskRepository;
             _categoryRepository = categoryRepository;
             _tagRepository = tagRepository;
+            _projectMemberRepository = projectMemberRepository;
+            _authService = authService;
             _errorHandler = errorHandler;
             _icon = _icons.First();
             Tasks = [];
@@ -100,6 +126,10 @@ namespace TaskManagementPr.PageModels
                 _project.Tags = [];
                 _project.Tasks = [];
                 Tasks = _project.Tasks;
+                Members = [];
+                IsCurrentUserOwner = true;
+                HasPersistedProject = false;
+                CanManageMembers = false;
             }
         }
 
@@ -108,6 +138,19 @@ namespace TaskManagementPr.PageModels
 
         private async Task LoadTags() =>
             AllTags = await _tagRepository.ListAsync();
+
+        private void SyncMemberUi()
+        {
+            if (_project is null)
+                return;
+
+            var list = _project.Members.ToList();
+            Members = new ObservableCollection<ProjectMember>(list);
+            IsCurrentUserOwner = _projectMemberRepository.IsCurrentUserOwner(_project.ID, list);
+            HasPersistedProject = _project.ID > 0;
+            CanManageMembers = IsCurrentUserOwner && HasPersistedProject;
+            CanDelete = !_project.IsNullOrNew() && IsCurrentUserOwner;
+        }
 
         private async Task RefreshData()
         {
@@ -121,6 +164,8 @@ namespace TaskManagementPr.PageModels
 
             Tasks = await _taskRepository.ListAsync(_project.ID);
             _project.Tasks = Tasks;
+            _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
+            SyncMemberUi();
         }
 
         private async Task LoadData(int id)
@@ -140,6 +185,7 @@ namespace TaskManagementPr.PageModels
                 Name = _project.Name;
                 Description = _project.Description;
                 Tasks = _project.Tasks;
+                SyncMemberUi();
 
                 foreach (var icon in Icons)
                 {
@@ -172,7 +218,6 @@ namespace TaskManagementPr.PageModels
             finally
             {
                 IsBusy = false;
-                CanDelete = !_project.IsNullOrNew();
                 OnPropertyChanged(nameof(HasCompletedTasks));
             }
         }
@@ -181,7 +226,13 @@ namespace TaskManagementPr.PageModels
         private async Task TaskCompleted(ProjectTask task)
         {
             await _taskRepository.SaveItemAsync(task);
+            WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             OnPropertyChanged(nameof(HasCompletedTasks));
+            if (_project is not null && !_project.IsNullOrNew())
+            {
+                Tasks = await _taskRepository.ListAsync(_project.ID);
+                _project.Tasks = Tasks;
+            }
         }
 
         [RelayCommand]
@@ -200,6 +251,7 @@ namespace TaskManagementPr.PageModels
             _project.CategoryID = Category?.ID ?? 0;
             _project.Icon = Icon.Icon ?? FluentUI.ribbon_24_regular;
             await _projectRepository.SaveItemAsync(_project);
+            await _projectMemberRepository.EnsureOwnerAsync(_project.ID, _authService.CurrentUserEmail);
 
             foreach (var tag in AllTags)
             {
@@ -218,8 +270,12 @@ namespace TaskManagementPr.PageModels
                 }
             }
 
+            WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
+            _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
+            SyncMemberUi();
+
             await Shell.Current.GoToAsync("..");
-            await AppShell.DisplayToastAsync("Project saved");
+            await AppShell.DisplayToastAsync("Проект сохранён");
         }
 
         [RelayCommand]
@@ -233,8 +289,6 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
-            // Pass the project so if this is a new project we can just add
-            // the tasks to the project and then save them all from here.
             await Shell.Current.GoToAsync($"task",
                 new ShellNavigationQueryParameters(){
                     {TaskDetailPageModel.ProjectQueryKey, _project}
@@ -250,9 +304,15 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
+            if (!IsCurrentUserOwner)
+            {
+                _errorHandler.HandleError(new Exception("Удалить проект может только владелец."));
+                return;
+            }
+
             await _projectRepository.DeleteItemAsync(_project);
             await Shell.Current.GoToAsync("..");
-            await AppShell.DisplayToastAsync("Project deleted");
+            await AppShell.DisplayToastAsync("Проект удалён");
         }
 
         [RelayCommand]
@@ -298,7 +358,7 @@ namespace TaskManagementPr.PageModels
 
             Tasks = new(Tasks);
             OnPropertyChanged(nameof(HasCompletedTasks));
-            await AppShell.DisplayToastAsync("All cleaned up!");
+            await AppShell.DisplayToastAsync("Завершённые задачи удалены");
         }
 
         [RelayCommand]
@@ -309,7 +369,6 @@ namespace TaskManagementPr.PageModels
                 var currentSelection = enumerableParameter.OfType<Tag>().ToList();
                 var previousSelection = AllTags.Where(t => t.IsSelected).ToList();
 
-                // Handle newly selected tags
                 foreach (var tag in currentSelection.Except(previousSelection))
                 {
                     tag.IsSelected = true;
@@ -319,7 +378,6 @@ namespace TaskManagementPr.PageModels
                     }
                 }
 
-                // Handle deselected tags
                 foreach (var tag in previousSelection.Except(currentSelection))
                 {
                     tag.IsSelected = false;
@@ -329,6 +387,146 @@ namespace TaskManagementPr.PageModels
                     }
                 }
             }
+        }
+
+        [RelayCommand]
+        private async Task InviteMember()
+        {
+            if (_project is null || _project.ID == 0 || !IsCurrentUserOwner)
+                return;
+
+            var page = Shell.Current?.CurrentPage;
+            if (page is null)
+                return;
+
+            var email = await page.DisplayPromptAsync("Приглашение", "Введите email участника:", "Добавить", "Отмена");
+            if (string.IsNullOrWhiteSpace(email))
+                return;
+
+            try
+            {
+                await _projectMemberRepository.InviteOrAddMemberAsync(_project.ID, email.Trim());
+                _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
+                SyncMemberUi();
+                await AppShell.DisplayToastAsync("Участник добавлен или приглашён");
+            }
+            catch (Exception ex)
+            {
+                _errorHandler.HandleError(ex);
+            }
+        }
+
+        [RelayCommand]
+        private async Task RemoveMember(ProjectMember? member)
+        {
+            if (_project is null || member is null || !IsCurrentUserOwner)
+                return;
+
+            var page = Shell.Current?.CurrentPage;
+            if (page is null)
+                return;
+
+            if (member.IsOwner && Members.Count(m => m.IsOwner && !m.IsPending) <= 1)
+            {
+                await page.DisplayAlertAsync("Нельзя удалить", "Сначала передайте права владельца другому участнику.", "OK");
+                return;
+            }
+
+            var ok = await page.DisplayAlertAsync("Удалить участника", $"Убрать {member.UserEmail} из проекта?", "Да", "Нет");
+            if (!ok)
+                return;
+
+            await _projectMemberRepository.RemoveMemberAsync(member);
+            _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
+            SyncMemberUi();
+        }
+
+        [RelayCommand]
+        private async Task TransferOwnership()
+        {
+            if (_project is null || _project.ID == 0 || !IsCurrentUserOwner)
+                return;
+
+            var page = Shell.Current?.CurrentPage;
+            if (page is null)
+                return;
+
+            var candidates = Members
+                .Where(m => !m.IsPending && !m.IsOwner)
+                .Select(m => m.UserEmail)
+                .ToArray();
+
+            if (candidates.Length == 0)
+            {
+                await page.DisplayAlertAsync("Нет кандидатов", "Добавьте активного участника, которому можно передать права.", "OK");
+                return;
+            }
+
+            var picked = await page.DisplayActionSheetAsync("Новый владелец", "Отмена", null, candidates);
+            if (picked is null || picked == "Отмена" || string.IsNullOrEmpty(picked))
+                return;
+
+            await _projectMemberRepository.TransferOwnershipAsync(_project.ID, picked);
+            _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
+            SyncMemberUi();
+            await AppShell.DisplayToastAsync("Владелец изменён");
+        }
+
+        [RelayCommand]
+        private async Task LeaveProject()
+        {
+            if (_project is null || _project.ID == 0)
+                return;
+
+            var page = Shell.Current?.CurrentPage;
+            if (page is null)
+                return;
+
+            var me = _authService.CurrentUserEmail?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(me))
+                me = "local@owner.app";
+
+            var self = Members.FirstOrDefault(m =>
+                m.UserEmail.Equals(me, StringComparison.OrdinalIgnoreCase) && !m.IsPending);
+
+            if (self is null)
+            {
+                await page.DisplayAlertAsync("Проект", "Вы не состоите в этом проекте.", "OK");
+                return;
+            }
+
+            if (self.IsOwner)
+            {
+                var owners = Members.Count(m => m.IsOwner && !m.IsPending);
+                if (owners <= 1 && Members.Count(m => !m.IsPending) > 1)
+                {
+                    await page.DisplayAlertAsync(
+                        "Покинуть проект",
+                        "Передайте права владельца другому участнику, затем вы сможете выйти.",
+                        "OK");
+                    return;
+                }
+
+                if (owners <= 1 && Members.Count(m => !m.IsPending) <= 1)
+                {
+                    var del = await page.DisplayAlertAsync(
+                        "Единственный участник",
+                        "Вы владелец и единственный участник. Удалить проект вместо выхода?",
+                        "Удалить", "Отмена");
+                    if (del)
+                        await Delete();
+                    return;
+                }
+            }
+
+            var ok = await page.DisplayAlertAsync("Покинуть проект", "Вы уверены?", "Да", "Нет");
+            if (!ok)
+                return;
+
+            await _projectMemberRepository.RemoveMemberAsync(self);
+            if (Shell.Current is not null)
+                await Shell.Current.GoToAsync("..");
+            await AppShell.DisplayToastAsync("Вы вышли из проекта");
         }
     }
 }

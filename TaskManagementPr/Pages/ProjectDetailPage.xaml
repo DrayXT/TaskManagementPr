@@ -8,17 +8,18 @@
              xmlns:controls="clr-namespace:TaskManagementPr.Pages.Controls"
              xmlns:fonts="clr-namespace:Fonts"
              x:Class="TaskManagementPr.Pages.ProjectDetailPage"
+             x:Name="ProjectRoot"
              x:DataType="pageModels:ProjectDetailPageModel"
-             Title="Project">
+             Title="Проект">
 
     <ContentPage.ToolbarItems>
         <ToolbarItem
-            Text="Delete"
+            Text="Удалить"
             Command="{Binding DeleteCommand}"
             Order="Primary"
             Priority="0"
             IconImageSource="{StaticResource IconDelete}"
-            SemanticProperties.Description="Delete Project" />
+            SemanticProperties.Description="Удалить проект" />
     </ContentPage.ToolbarItems>
 
     <Grid>
@@ -149,9 +150,40 @@
                 </CollectionView>
                 
 
-                <Button Text="Save" 
+                <Button Text="Сохранить проект"
                     MinimumHeightRequest="{OnIdiom 44, Desktop=60}"
                     Command="{Binding SaveCommand}" />
+
+                <Label Text="Участники проекта" Style="{StaticResource Title2}" />
+                <CollectionView ItemsSource="{Binding Members}" MaximumHeightRequest="280">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:ProjectMember">
+                            <Grid Padding="0,8" ColumnDefinitions="*,Auto">
+                                <Label Grid.Column="0"
+                                       Text="{Binding DisplayLabel}"
+                                       VerticalOptions="Center" />
+                                <Button Grid.Column="1"
+                                        Text="Удалить"
+                                        Command="{Binding BindingContext.RemoveMemberCommand, Source={x:Reference ProjectRoot}, x:DataType=ContentPage}"
+                                        CommandParameter="{Binding .}"
+                                        IsVisible="{Binding BindingContext.IsCurrentUserOwner, Source={x:Reference ProjectRoot}, x:DataType=ContentPage}" />
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Label Text="Приглашение: введите email. Если это ваш email — доступ сразу; если чужой — он увидит проект после входа под этим email."
+                       FontSize="13" LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light=#555555,Dark=#bbbbbb}"
+                       IsVisible="{Binding CanManageMembers}" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="{Binding CanManageMembers}">
+                    <Button Grid.Column="0" Text="Пригласить" Command="{Binding InviteMemberCommand}" />
+                    <Button Grid.Column="1" Text="Передать владельца" Command="{Binding TransferOwnershipCommand}" />
+                </Grid>
+
+                <Button Text="Покинуть проект"
+                        Command="{Binding LeaveProjectCommand}"
+                        IsVisible="{Binding HasPersistedProject}" />
 
                 <Grid HeightRequest="44">
                     <Label 

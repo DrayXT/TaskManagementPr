@@ -52,6 +52,7 @@ namespace TaskManagementPr
             builder.Services.AddTransient<LoginPage>();
             builder.Services.AddTransient<RegisterPage>();
 
+            builder.Services.AddSingleton<ProjectMemberRepository>();
             builder.Services.AddSingleton<ProjectRepository>();
             builder.Services.AddSingleton<TaskRepository>();
             builder.Services.AddSingleton<CategoryRepository>();
@@ -60,10 +61,12 @@ namespace TaskManagementPr
             builder.Services.AddSingleton<ModalErrorHandler>();
             builder.Services.AddSingleton<MainPageModel>();
             builder.Services.AddSingleton<ProjectListPageModel>();
+            builder.Services.AddSingleton<StatisticsPageModel>();
             builder.Services.AddSingleton<ManageMetaPageModel>();
 
             builder.Services.AddTransientWithShellRoute<ProjectDetailPage, ProjectDetailPageModel>("project");
             builder.Services.AddTransientWithShellRoute<TaskDetailPage, TaskDetailPageModel>("task");
+            builder.Services.AddSingleton<StatisticsPage>();
 
             return builder.Build();
         }
