@@ -6,6 +6,7 @@ using TaskManagementPr.Data;
 using TaskManagementPr.Messaging;
 using TaskManagementPr.Models;
 using TaskManagementPr.Services;
+using TaskManagementPr.Utilities;
 
 namespace TaskManagementPr.PageModels
 {
@@ -150,6 +151,9 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
+            var realEmail = await _authService.GetEmailAsync();
+            await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
+
             Tasks = await _taskRepository.ListAsync(_project.ID);
             _project.Tasks = Tasks;
             _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
@@ -161,6 +165,8 @@ namespace TaskManagementPr.PageModels
             try
             {
                 IsBusy = true;
+                var realEmail = await _authService.GetEmailAsync();
+                await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
 
                 _project = await _projectRepository.GetAsync(id);
 
@@ -202,6 +208,9 @@ namespace TaskManagementPr.PageModels
         [RelayCommand]
         private async Task TaskCompleted(ProjectTask task)
         {
+            if (task.IsCompleted)
+                TaskStatisticsPoints.ApplyCompletionDefaults(task);
+
             await _taskRepository.SaveItemAsync(task);
             WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             OnPropertyChanged(nameof(HasCompletedTasks));
@@ -228,7 +237,7 @@ namespace TaskManagementPr.PageModels
             _project.CategoryID = Category?.ID ?? 0;
             _project.Icon = Icon.Icon ?? FluentUI.ribbon_24_regular;
             await _projectRepository.SaveItemAsync(_project);
-            await _projectMemberRepository.EnsureOwnerAsync(_project.ID, _authService.CurrentUserEmail);
+            await _projectMemberRepository.EnsureOwnerAsync(_project.ID, await _authService.GetEmailAsync());
 
             foreach (var task in _project.Tasks)
             {
@@ -304,6 +313,7 @@ namespace TaskManagementPr.PageModels
                 Tasks.Remove(task);
             }
 
+            WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             Tasks = new(Tasks);
             OnPropertyChanged(nameof(HasCompletedTasks));
             await AppShell.DisplayToastAsync("Завершённые задачи удалены");
@@ -402,7 +412,8 @@ namespace TaskManagementPr.PageModels
             if (page is null)
                 return;
 
-            var me = _authService.CurrentUserEmail?.Trim().ToLowerInvariant();
+            var meRaw = await _authService.GetEmailAsync();
+            var me = meRaw?.Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(me))
                 me = "local@owner.app";
 

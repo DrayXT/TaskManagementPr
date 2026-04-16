@@ -5,6 +5,7 @@ using TaskManagementPr.Data;
 using TaskManagementPr.Messaging;
 using TaskManagementPr.Models;
 using TaskManagementPr.Services;
+using TaskManagementPr.Utilities;
 
 namespace TaskManagementPr.PageModels
 {
@@ -71,7 +72,8 @@ namespace TaskManagementPr.PageModels
             {
                 IsBusy = true;
 
-                await _projectMemberRepository.ActivatePendingForEmailAsync(_authService.CurrentUserEmail);
+                var realEmail = await _authService.GetEmailAsync();
+                await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
 
                 Projects = await _projectRepository.ListAsync();
 
@@ -159,10 +161,34 @@ namespace TaskManagementPr.PageModels
         [RelayCommand]
         private async Task TaskCompleted(ProjectTask task)
         {
+            if (task.IsCompleted)
+                TaskStatisticsPoints.ApplyCompletionDefaults(task);
+
             await _taskRepository.SaveItemAsync(task);
             WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             OnPropertyChanged(nameof(HasCompletedTasks));
             Tasks = await _taskRepository.ListAsync();
+        }
+
+        [RelayCommand]
+        private async Task DeleteTask(ProjectTask task)
+        {
+            var page = Shell.Current?.CurrentPage;
+            if (task is null || page is null)
+                return;
+
+            var ok = await page.DisplayAlertAsync(
+                "Удалить задачу",
+                $"Удалить задачу \"{task.Title}\"?",
+                "Да",
+                "Нет");
+            if (!ok)
+                return;
+
+            await _taskRepository.DeleteItemAsync(task);
+            Tasks = await _taskRepository.ListAsync();
+            WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
+            OnPropertyChanged(nameof(HasCompletedTasks));
         }
 
         [RelayCommand]

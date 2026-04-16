@@ -1,5 +1,6 @@
 ﻿using CommunityToolkit.Maui.Alerts;
 using CommunityToolkit.Maui.Core;
+using Microsoft.Extensions.DependencyInjection;
 using Font = Microsoft.Maui.Font;
 
 namespace TaskManagementPr
@@ -46,6 +47,21 @@ namespace TaskManagementPr
         private void SfSegmentedControl_SelectionChanged(object? sender, Syncfusion.Maui.Toolkit.SegmentedControl.SelectionChangedEventArgs e)
         {
             Application.Current!.UserAppTheme = e.NewIndex == 0 ? AppTheme.Light : AppTheme.Dark;
+        }
+
+        private async void Logout_Clicked(object? sender, EventArgs e)
+        {
+            var page = Current?.CurrentPage;
+            if (page is null)
+                return;
+
+            var ok = await page.DisplayAlertAsync("Выход", "Выйти из аккаунта?", "Да", "Нет");
+            if (!ok)
+                return;
+
+            var authService = App.Services.GetRequiredService<IAuthService>();
+            await authService.SignOutAsync();
+            Application.Current!.Windows[0].Page = new AuthShell();
         }
     }
 }

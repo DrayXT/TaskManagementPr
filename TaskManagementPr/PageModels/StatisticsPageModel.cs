@@ -28,6 +28,7 @@ namespace TaskManagementPr.PageModels
         private const string LocalOwnerPlaceholderEmail = "local@owner.app";
 
         private readonly ProjectRepository _projectRepository;
+        private readonly TaskRepository _taskRepository;
         private readonly ProjectMemberRepository _projectMemberRepository;
         private readonly IAuthService _authService;
         private readonly ModalErrorHandler _errorHandler;
@@ -58,11 +59,13 @@ namespace TaskManagementPr.PageModels
 
         public StatisticsPageModel(
             ProjectRepository projectRepository,
+            TaskRepository taskRepository,
             ProjectMemberRepository projectMemberRepository,
             IAuthService authService,
             ModalErrorHandler errorHandler)
         {
             _projectRepository = projectRepository;
+            _taskRepository = taskRepository;
             _projectMemberRepository = projectMemberRepository;
             _authService = authService;
             _errorHandler = errorHandler;
@@ -98,8 +101,7 @@ namespace TaskManagementPr.PageModels
             if (tasks.Any(t => t.AssigneeEmails.Any(e => e.Equals(me, StringComparison.OrdinalIgnoreCase))))
                 return true;
 
-            var loggedIn = Normalize(_authService.CurrentUserEmail);
-            if (loggedIn is null || loggedIn.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase))
+            if (me.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase))
                 return false;
 
             return IsLegacyLocalOnlyPlaceholder(activeMembers);
@@ -159,10 +161,12 @@ namespace TaskManagementPr.PageModels
             try
             {
                 IsBusy = true;
-                var me = Normalize(_authService.CurrentUserEmail) ?? "local@owner.app";
-                CurrentUserDisplay = _authService.CurrentUserEmail ?? "не авторизован (local@owner.app)";
+                
+                var realEmail = await _authService.GetEmailAsync();
+                var me = Normalize(realEmail) ?? "local@owner.app";
+                CurrentUserDisplay = realEmail ?? "не авторизован (local@owner.app)";
 
-                await _projectMemberRepository.ActivatePendingForEmailAsync(_authService.CurrentUserEmail);
+                await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
 
                 var projects = await _projectRepository.ListAsync();
 
@@ -170,7 +174,6 @@ namespace TaskManagementPr.PageModels
                 var personalPoints = 0;
                 var teamTasks = 0;
                 var teamPoints = 0;
-                var board = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 var sharedRows = new List<SharedProjectRow>();
 
                 foreach (var project in projects)
@@ -186,11 +189,16 @@ namespace TaskManagementPr.PageModels
                     var noAssigneeTaskCountsForPersonal = activeMembers.Count == 0 || namedUserInMembers ||
                         legacyOwnerAlias;
 
-                    var isShared = activeMembers.Count >= 2;
+                    var isShared = true; // Теперь показываем все проекты
                     if (isShared)
                     {
-                        var names = string.Join(", ", activeMembers.Select(m =>
+                        var visibleMembers = activeMembers
+                            .Where(m => !m.UserEmail.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                        var names = string.Join(", ", visibleMembers.Select(m =>
                             m.IsPending ? $"{m.UserEmail} (ожидает)" : m.UserEmail));
+                        if (string.IsNullOrWhiteSpace(names))
+                            names = "нет активных участников";
                         sharedRows.Add(new SharedProjectRow
                         {
                             ProjectName = project.Name,
@@ -200,7 +208,18 @@ namespace TaskManagementPr.PageModels
 
                     foreach (var task in project.Tasks.Where(t => t.IsCompleted))
                     {
+                        TaskStatisticsPoints.ApplyCompletionDefaults(task);
                         var awardedPoints = TaskStatisticsPoints.GetAwardedPoints(task, activeMembers);
+                        if (awardedPoints.Count == 0 &&
+                            task.AssigneeEmails.Count == 0 &&
+                            noAssigneeTaskCountsForPersonal)
+                        {
+                            awardedPoints = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                [me] = TaskStatisticsPoints.GetEffectiveRewardPoints(task)
+                            };
+                        }
+
                         if (IsPersonalCredit(task, me, noAssigneeTaskCountsForPersonal, awardedPoints, legacyOwnerAlias))
                         {
                             personalTasks++;
@@ -212,24 +231,30 @@ namespace TaskManagementPr.PageModels
 
                         teamTasks++;
                         teamPoints += awardedPoints.Values.Sum();
-
-                        foreach (var kv in awardedPoints)
-                        {
-                            var key = NormalizeBoardKey(kv.Key, me, legacyOwnerAlias);
-                            board.TryGetValue(key, out var current);
-                            board[key] = current + kv.Value;
-                        }
                     }
+                }
+
+                // Задачи без проекта (ProjectID == 0) не попадают в project.Tasks и раньше терялись в статистике.
+                var allTasks = await _taskRepository.ListAsync();
+                foreach (var task in allTasks.Where(t => t.IsCompleted && t.ProjectID == 0))
+                {
+                    TaskStatisticsPoints.ApplyCompletionDefaults(task);
+                    var awardedPoints = TaskStatisticsPoints.GetAwardedPoints(task, []);
+                    if (awardedPoints.TryGetValue(me, out var personalAward))
+                    {
+                        personalTasks++;
+                        personalPoints += personalAward;
+                    }
+
+                    teamTasks++;
+                    teamPoints += awardedPoints.Values.Sum();
                 }
 
                 PersonalTasksCompleted = personalTasks;
                 PersonalPoints = personalPoints;
                 TeamCompletedTasksInShared = teamTasks;
                 TeamPointsInShared = teamPoints;
-
-                TeamLeaderboard = new ObservableCollection<MemberStatRow>(
-                    board.OrderByDescending(kv => kv.Value)
-                        .Select(kv => new MemberStatRow { Email = kv.Key, Points = kv.Value }));
+                TeamLeaderboard = [];
 
                 SharedProjects = new ObservableCollection<SharedProjectRow>(sharedRows);
             }
@@ -251,7 +276,7 @@ namespace TaskManagementPr.PageModels
             bool treatLegacyOwnerAsCurrentUser)
         {
             if (task.AssigneeEmails.Count > 0)
-                return task.AssigneeEmails.Any(e => e.Equals(me, StringComparison.OrdinalIgnoreCase));
+                return awardedPoints.ContainsKey(me);
 
             if (noAssigneeTaskCountsForPersonal)
                 return true;

@@ -198,9 +198,9 @@ namespace TaskManagementPr.PageModels
 
         private int ParseBudgetMax()
         {
-            if (!int.TryParse(RewardBudgetMaxText.Trim(), out var v) || v < 1)
+            if (!int.TryParse(RewardBudgetMaxText.Trim(), out var v) || v < 0)
                 return 100;
-            return Math.Clamp(v, 1, 10_000);
+            return Math.Clamp(v, 0, 10_000);
         }
 
         private void RefreshPointsHint()
@@ -212,7 +212,7 @@ namespace TaskManagementPr.PageModels
             if (n <= 0)
             {
                 PointsHint =
-                    $"Максимум баллов: {max}. Исполнителей нет — при завершении учёт баллов по правилам проекта.";
+                    $"Максимум баллов: {max}. Если исполнителей нет, при завершении баллы уйдут владельцу проекта.";
                 return;
             }
 
@@ -229,7 +229,7 @@ namespace TaskManagementPr.PageModels
             }
 
             PointsHint =
-                $"Максимум {max} балл(ов). Распределено: {sum}. Осталось свободно: {max - sum}. (Если оставить нули у всех при нескольких людях, при подсчёте поделится поровну.)";
+                $"Максимум {max} балл(ов). Распределено вручную: {sum}. Осталось свободно: {max - sum}. Если оставить как есть, при завершении задачи баллы автоматически поделятся между всеми исполнителями.";
         }
 
         partial void OnProjectChanged(Project? value)
@@ -340,11 +340,6 @@ namespace TaskManagementPr.PageModels
                     $"Сумма по людям ({sum}) больше максимума ({max}). Исправьте распределение или увеличьте максимум.");
                 return;
             }
-
-            if (AssignedExecutors.Count == 1 && sum == 0)
-                AssignedExecutors[0].PointsText = max.ToString();
-
-            sum = AssignedExecutors.Sum(r => r.GetParsedPoints());
 
             _task.Title = Title;
             _task.Description = Description?.Trim() ?? string.Empty;
