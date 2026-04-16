@@ -26,6 +26,12 @@
                 <sf:SfTextInputLayout Hint="Что сделать">
                     <Entry Text="{Binding Title}" Placeholder="Краткое название" />
                 </sf:SfTextInputLayout>
+                <sf:SfTextInputLayout Hint="Описание">
+                    <Editor Text="{Binding Description}"
+                            Placeholder="Необязательно: детали задачи"
+                            AutoSize="TextChanges"
+                            MinimumHeightRequest="90" />
+                </sf:SfTextInputLayout>
 
                 <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
                     <CheckBox IsChecked="{Binding IsCompleted}" VerticalOptions="Center" />
@@ -71,7 +77,7 @@
                 </sf:SfTextInputLayout>
 
                 <Label Text="Кто делает и сколько баллов каждому" Style="{StaticResource Title2}" Margin="0,8,0,0" />
-                <Label Text="Любой email — не обязательно из проекта. Введите баллы каждому. Если у нескольких оставить 0, при подсчёте поделится поровну до максимума."
+                <Label Text="Любой email — не обязательно из проекта. Введите точные баллы каждому человеку. В статистику попадут только указанные здесь значения."
                        FontSize="13" LineBreakMode="WordWrap"
                        TextColor="{AppThemeBinding Light=#555555,Dark=#bbbbbb}" />
                 <sf:SfTextInputLayout Hint="Email исполнителя">

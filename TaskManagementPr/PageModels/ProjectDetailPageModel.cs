@@ -6,6 +6,7 @@ using TaskManagementPr.Data;
 using TaskManagementPr.Messaging;
 using TaskManagementPr.Models;
 using TaskManagementPr.Services;
+using TaskManagementPr.Utilities;
 
 namespace TaskManagementPr.PageModels
 {
@@ -15,7 +16,6 @@ namespace TaskManagementPr.PageModels
         private readonly ProjectRepository _projectRepository;
         private readonly TaskRepository _taskRepository;
         private readonly CategoryRepository _categoryRepository;
-        private readonly TagRepository _tagRepository;
         private readonly ProjectMemberRepository _projectMemberRepository;
         private readonly IAuthService _authService;
         private readonly ModalErrorHandler _errorHandler;
@@ -49,11 +49,6 @@ namespace TaskManagementPr.PageModels
 
         [ObservableProperty]
         private int _categoryIndex = -1;
-
-        [ObservableProperty]
-        private List<Tag> _allTags = [];
-
-        public IList<object> SelectedTags { get; set; } = new List<object>();
 
         [ObservableProperty]
         private IconData _icon;
@@ -92,7 +87,6 @@ namespace TaskManagementPr.PageModels
             ProjectRepository projectRepository,
             TaskRepository taskRepository,
             CategoryRepository categoryRepository,
-            TagRepository tagRepository,
             ProjectMemberRepository projectMemberRepository,
             IAuthService authService,
             ModalErrorHandler errorHandler)
@@ -100,7 +94,6 @@ namespace TaskManagementPr.PageModels
             _projectRepository = projectRepository;
             _taskRepository = taskRepository;
             _categoryRepository = categoryRepository;
-            _tagRepository = tagRepository;
             _projectMemberRepository = projectMemberRepository;
             _authService = authService;
             _errorHandler = errorHandler;
@@ -121,9 +114,8 @@ namespace TaskManagementPr.PageModels
             }
             else
             {
-                Task.WhenAll(LoadCategories(), LoadTags()).FireAndForgetSafeAsync(_errorHandler);
+                LoadCategories().FireAndForgetSafeAsync(_errorHandler);
                 _project = new();
-                _project.Tags = [];
                 _project.Tasks = [];
                 Tasks = _project.Tasks;
                 Members = [];
@@ -135,9 +127,6 @@ namespace TaskManagementPr.PageModels
 
         private async Task LoadCategories() =>
             Categories = await _categoryRepository.ListAsync();
-
-        private async Task LoadTags() =>
-            AllTags = await _tagRepository.ListAsync();
 
         private void SyncMemberUi()
         {
@@ -162,6 +151,9 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
+            var realEmail = await _authService.GetEmailAsync();
+            await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
+
             Tasks = await _taskRepository.ListAsync(_project.ID);
             _project.Tasks = Tasks;
             _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
@@ -173,6 +165,8 @@ namespace TaskManagementPr.PageModels
             try
             {
                 IsBusy = true;
+                var realEmail = await _authService.GetEmailAsync();
+                await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
 
                 _project = await _projectRepository.GetAsync(id);
 
@@ -199,17 +193,6 @@ namespace TaskManagementPr.PageModels
                 Categories = await _categoryRepository.ListAsync();
                 Category = Categories?.FirstOrDefault(c => c.ID == _project.CategoryID);
                 CategoryIndex = Categories?.FindIndex(c => c.ID == _project.CategoryID) ?? -1;
-
-                var allTags = await _tagRepository.ListAsync();
-                foreach (var tag in allTags)
-                {
-                    tag.IsSelected = _project.Tags.Any(t => t.ID == tag.ID);
-                    if (tag.IsSelected)
-                    {
-                        SelectedTags.Add(tag);
-                    }
-                }
-                AllTags = new(allTags);
             }
             catch (Exception e)
             {
@@ -225,6 +208,9 @@ namespace TaskManagementPr.PageModels
         [RelayCommand]
         private async Task TaskCompleted(ProjectTask task)
         {
+            if (task.IsCompleted)
+                TaskStatisticsPoints.ApplyCompletionDefaults(task);
+
             await _taskRepository.SaveItemAsync(task);
             WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             OnPropertyChanged(nameof(HasCompletedTasks));
@@ -251,15 +237,7 @@ namespace TaskManagementPr.PageModels
             _project.CategoryID = Category?.ID ?? 0;
             _project.Icon = Icon.Icon ?? FluentUI.ribbon_24_regular;
             await _projectRepository.SaveItemAsync(_project);
-            await _projectMemberRepository.EnsureOwnerAsync(_project.ID, _authService.CurrentUserEmail);
-
-            foreach (var tag in AllTags)
-            {
-                if (tag.IsSelected)
-                {
-                    await _tagRepository.SaveItemAsync(tag, _project.ID);
-                }
-            }
+            await _projectMemberRepository.EnsureOwnerAsync(_project.ID, await _authService.GetEmailAsync());
 
             foreach (var task in _project.Tasks)
             {
@@ -320,27 +298,6 @@ namespace TaskManagementPr.PageModels
             Shell.Current.GoToAsync($"task?id={task.ID}");
 
         [RelayCommand]
-        internal async Task ToggleTag(Tag tag)
-        {
-            tag.IsSelected = !tag.IsSelected;
-
-            if (!_project.IsNullOrNew())
-            {
-                if (tag.IsSelected)
-                {
-                    await _tagRepository.SaveItemAsync(tag, _project.ID);
-                }
-                else
-                {
-                    await _tagRepository.DeleteItemAsync(tag, _project.ID);
-                }
-            }
-
-            AllTags = new(AllTags);
-            SemanticScreenReader.Announce($"{tag.Title} {(tag.IsSelected ? "selected" : "unselected")}");
-        }
-
-        [RelayCommand]
         private void IconSelected(IconData icon)
         {
             SemanticScreenReader.Announce($"{icon.Description} selected");
@@ -356,37 +313,10 @@ namespace TaskManagementPr.PageModels
                 Tasks.Remove(task);
             }
 
+            WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
             Tasks = new(Tasks);
             OnPropertyChanged(nameof(HasCompletedTasks));
             await AppShell.DisplayToastAsync("Завершённые задачи удалены");
-        }
-
-        [RelayCommand]
-        private async Task SelectionChanged(object parameter)
-        {
-            if (parameter is IEnumerable<object> enumerableParameter)
-            {
-                var currentSelection = enumerableParameter.OfType<Tag>().ToList();
-                var previousSelection = AllTags.Where(t => t.IsSelected).ToList();
-
-                foreach (var tag in currentSelection.Except(previousSelection))
-                {
-                    tag.IsSelected = true;
-                    if (!_project.IsNullOrNew())
-                    {
-                        await _tagRepository.SaveItemAsync(tag, _project.ID);
-                    }
-                }
-
-                foreach (var tag in previousSelection.Except(currentSelection))
-                {
-                    tag.IsSelected = false;
-                    if (!_project.IsNullOrNew())
-                    {
-                        await _tagRepository.DeleteItemAsync(tag, _project.ID);
-                    }
-                }
-            }
         }
 
         [RelayCommand]
@@ -482,7 +412,8 @@ namespace TaskManagementPr.PageModels
             if (page is null)
                 return;
 
-            var me = _authService.CurrentUserEmail?.Trim().ToLowerInvariant();
+            var meRaw = await _authService.GetEmailAsync();
+            var me = meRaw?.Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(me))
                 me = "local@owner.app";
 

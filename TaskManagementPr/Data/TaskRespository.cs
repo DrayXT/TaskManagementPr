@@ -101,6 +101,9 @@ CREATE TABLE IF NOT EXISTS TaskAssignee (
 
             if (!columns.Contains("DueDate"))
                 await AddColumn("ALTER TABLE Task ADD COLUMN DueDate TEXT NULL");
+
+            if (!columns.Contains("Description"))
+                await AddColumn("ALTER TABLE Task ADD COLUMN Description TEXT NOT NULL DEFAULT ''");
         }
 
         private static ProjectTask ReadTask(SqliteDataReader reader)
@@ -123,6 +126,7 @@ CREATE TABLE IF NOT EXISTS TaskAssignee (
             var priorityOrd = Ord(reader, "Priority");
             var rewardOrd = Ord(reader, "RewardPoints");
             var dueOrd = Ord(reader, "DueDate");
+            var descriptionOrd = Ord(reader, "Description");
 
             DateTime? due = null;
             if (dueOrd >= 0 && !reader.IsDBNull(dueOrd))
@@ -136,6 +140,7 @@ CREATE TABLE IF NOT EXISTS TaskAssignee (
             {
                 ID = reader.GetInt32(idOrd),
                 Title = reader.GetString(titleOrd),
+                Description = descriptionOrd >= 0 && !reader.IsDBNull(descriptionOrd) ? reader.GetString(descriptionOrd) : string.Empty,
                 IsCompleted = reader.GetBoolean(completedOrd),
                 ProjectID = reader.GetInt32(projectOrd),
                 Priority = priorityOrd >= 0 && !reader.IsDBNull(priorityOrd)
@@ -281,20 +286,21 @@ CREATE TABLE IF NOT EXISTS TaskAssignee (
             if (item.ID == 0)
             {
                 saveCmd.CommandText = @"
-INSERT INTO Task (Title, IsCompleted, ProjectID, Priority, RewardPoints, DueDate)
-VALUES (@title, @isCompleted, @projectId, @priority, @reward, @due);
+INSERT INTO Task (Title, Description, IsCompleted, ProjectID, Priority, RewardPoints, DueDate)
+VALUES (@title, @description, @isCompleted, @projectId, @priority, @reward, @due);
 SELECT last_insert_rowid();";
             }
             else
             {
                 saveCmd.CommandText = @"
-UPDATE Task SET Title = @title, IsCompleted = @isCompleted, ProjectID = @projectId,
+UPDATE Task SET Title = @title, Description = @description, IsCompleted = @isCompleted, ProjectID = @projectId,
     Priority = @priority, RewardPoints = @reward, DueDate = @due
 WHERE ID = @id";
                 saveCmd.Parameters.AddWithValue("@id", item.ID);
             }
 
             saveCmd.Parameters.AddWithValue("@title", item.Title);
+            saveCmd.Parameters.AddWithValue("@description", item.Description ?? string.Empty);
             saveCmd.Parameters.AddWithValue("@isCompleted", item.IsCompleted);
             saveCmd.Parameters.AddWithValue("@projectId", item.ProjectID);
             saveCmd.Parameters.AddWithValue("@priority", (int)item.Priority);

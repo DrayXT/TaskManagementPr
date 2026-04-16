@@ -31,7 +31,8 @@ namespace TaskManagementPr.PageModels
         [RelayCommand]
         private async Task Appearing()
         {
-            await _projectMemberRepository.ActivatePendingForEmailAsync(_authService.CurrentUserEmail);
+            var realEmail = await _authService.GetEmailAsync();
+            await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
             Projects = await _projectRepository.ListAsync();
         }
 

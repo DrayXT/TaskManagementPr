@@ -32,6 +32,10 @@
         ContentTemplate="{DataTemplate pages:ManageMetaPage}"
         Route="manage" />
 
+    <MenuItem
+        Text="Выйти"
+        Clicked="Logout_Clicked" />
+
     <Shell.FlyoutFooter>
         <Grid Padding="15">
             <sf:SfSegmentedControl x:Name="ThemeSegmentedControl" 

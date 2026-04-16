@@ -60,6 +60,12 @@
                                 HorizontalOptions="Start"
                                 LineBreakMode="WordWrap" />
                             <Label
+                                Text="{Binding Description}"
+                                FontSize="13"
+                                LineBreakMode="WordWrap"
+                                IsVisible="{Binding HasDescription}"
+                                TextColor="{AppThemeBinding Light=#444444,Dark=#d0d0d0}" />
+                            <Label
                                 Text="{Binding Subtitle}"
                                 FontSize="12"
                                 TextColor="{AppThemeBinding Light=#555555,Dark=#bbbbbb}"
@@ -75,9 +81,9 @@
 
                     <VerticalStackLayout
                         Grid.Column="2"
-                        Spacing="4"
+                        Spacing="6"
                         VerticalOptions="Center"
-                        WidthRequest="100"
+                        WidthRequest="108"
                         IsVisible="{Binding ShowQuickCompleteButton, Source={x:Reference TaskViewRoot}}">
                         <Button
                             Text="Выполнено"
@@ -91,6 +97,12 @@
                             HorizontalTextAlignment="Center"
                             TextColor="{AppThemeBinding Light=#2e7d32,Dark=#81c784}"
                             IsVisible="{Binding IsCompleted}" />
+                        <Button
+                            Text="Удалить"
+                            Clicked="Delete_OnClicked"
+                            Padding="8,6"
+                            FontSize="13"
+                            IsVisible="{Binding ShowDeleteButton, Source={x:Reference TaskViewRoot}}" />
                     </VerticalStackLayout>
                 </Grid>
             </shimmer:SfShimmer.Content>

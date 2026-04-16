@@ -4,6 +4,7 @@ namespace TaskManagementPr.Services
 {
     public class AuthService : IAuthService
     {
+        private const string CurrentUserEmailPreferenceKey = "current_user_email";
         private readonly Supabase.Client _client;
         private bool _initialized;
 
@@ -16,9 +17,32 @@ namespace TaskManagementPr.Services
             _client = new Supabase.Client(Constants.SupabaseUrl, Constants.SupabaseAnonKey, options);
         }
 
-        public bool IsAuthenticated => _client.Auth.CurrentSession != null;
+        private static string? StoredUserEmail
+        {
+            get
+            {
+                var stored = Preferences.Default.Get(CurrentUserEmailPreferenceKey, string.Empty);
+                return string.IsNullOrWhiteSpace(stored) ? null : stored;
+            }
+        }
 
-        public string? CurrentUserEmail => _client.Auth.CurrentUser?.Email;
+        public bool IsAuthenticated => _client.Auth.CurrentSession != null ||
+            !string.IsNullOrWhiteSpace(StoredUserEmail);
+
+        public string? CurrentUserEmail =>
+            _client.Auth.CurrentUser?.Email ??
+            StoredUserEmail;
+
+        public async Task<string?> GetEmailAsync()
+        {
+            await EnsureInitializedAsync();
+            var email = _client.Auth.CurrentUser?.Email;
+            if (email != null && string.IsNullOrWhiteSpace(StoredUserEmail))
+            {
+                Preferences.Default.Set(CurrentUserEmailPreferenceKey, email.Trim().ToLowerInvariant());
+            }
+            return email ?? StoredUserEmail;
+        }
 
         private async Task EnsureInitializedAsync()
         {
@@ -31,6 +55,8 @@ namespace TaskManagementPr.Services
         {
             await EnsureInitializedAsync();
             var session = await _client.Auth.SignIn(email, password);
+            if (session?.User?.Email is { } signedInEmail)
+                Preferences.Default.Set(CurrentUserEmailPreferenceKey, signedInEmail.Trim().ToLowerInvariant());
             return session != null;
         }
 
@@ -38,6 +64,8 @@ namespace TaskManagementPr.Services
         {
             await EnsureInitializedAsync();
             var session = await _client.Auth.SignUp(email, password);
+            if (session?.User?.Email is { } signedUpEmail)
+                Preferences.Default.Set(CurrentUserEmailPreferenceKey, signedUpEmail.Trim().ToLowerInvariant());
             return session != null;
         }
 
@@ -45,6 +73,7 @@ namespace TaskManagementPr.Services
         {
             await EnsureInitializedAsync();
             await _client.Auth.SignOut();
+            Preferences.Default.Remove(CurrentUserEmailPreferenceKey);
         }
     }
 }

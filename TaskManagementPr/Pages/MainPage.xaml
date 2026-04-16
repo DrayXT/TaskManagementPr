@@ -87,6 +87,8 @@
                                 <DataTemplate>
                                     <controls:TaskView
                                         ShowQuickCompleteButton="True"
+                                        ShowDeleteButton="True"
+                                        TaskDeleteCommand="{Binding DeleteTaskCommand, Source={RelativeSource AncestorType={x:Type pageModels:MainPageModel}}, x:DataType=pageModels:MainPageModel}"
                                         TaskCompletedCommand="{Binding TaskCompletedCommand, Source={RelativeSource AncestorType={x:Type pageModels:MainPageModel}}, x:DataType=pageModels:MainPageModel}" />
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>

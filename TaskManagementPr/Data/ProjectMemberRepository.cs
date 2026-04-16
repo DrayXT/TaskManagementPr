@@ -7,6 +7,7 @@ namespace TaskManagementPr.Data
 {
     public class ProjectMemberRepository
     {
+        private const string LocalOwnerPlaceholderEmail = "local@owner.app";
         private bool _hasBeenInitialized;
         private readonly ILogger<ProjectMemberRepository> _logger;
         private readonly IAuthService _authService;
@@ -53,9 +54,10 @@ CREATE TABLE IF NOT EXISTS ProjectMember (
 
         private async Task EnsureOwnersForProjectsWithoutMembersAsync(SqliteConnection connection)
         {
-            var fallback = string.IsNullOrWhiteSpace(_authService.CurrentUserEmail)
-                ? "local@owner.app"
-                : NormalizeEmail(_authService.CurrentUserEmail);
+            var currentEmail = await _authService.GetEmailAsync();
+            var fallback = string.IsNullOrWhiteSpace(currentEmail)
+                ? LocalOwnerPlaceholderEmail
+                : NormalizeEmail(currentEmail);
 
             var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT ID FROM Project";
@@ -112,14 +114,114 @@ CREATE TABLE IF NOT EXISTS ProjectMember (
                 return;
 
             await Init();
+            var normalized = NormalizeEmail(email);
             await using var connection = new SqliteConnection(Constants.DatabasePath);
             await connection.OpenAsync();
 
             var cmd = connection.CreateCommand();
             cmd.CommandText =
                 "UPDATE ProjectMember SET IsPending = 0 WHERE UserEmail = @e COLLATE NOCASE AND IsPending = 1";
-            cmd.Parameters.AddWithValue("@e", NormalizeEmail(email));
+            cmd.Parameters.AddWithValue("@e", normalized);
             await cmd.ExecuteNonQueryAsync();
+
+            await PromoteLegacyLocalOwnerToCurrentUserAsync(connection, normalized);
+        }
+
+        private static async Task PromoteLegacyLocalOwnerToCurrentUserAsync(SqliteConnection connection, string normalizedCurrentEmail)
+        {
+            var localProjectsCmd = connection.CreateCommand();
+            localProjectsCmd.CommandText = @"
+SELECT DISTINCT ProjectID
+FROM ProjectMember
+WHERE UserEmail = @local COLLATE NOCASE";
+            localProjectsCmd.Parameters.AddWithValue("@local", LocalOwnerPlaceholderEmail);
+
+            var projectIds = new List<int>();
+            await using (var reader = await localProjectsCmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                    projectIds.Add(reader.GetInt32(0));
+            }
+
+            foreach (var projectId in projectIds)
+            {
+                var localStateCmd = connection.CreateCommand();
+                localStateCmd.CommandText = @"
+SELECT IsOwner, IsPending
+FROM ProjectMember
+WHERE ProjectID = @pid AND UserEmail = @local COLLATE NOCASE
+LIMIT 1";
+                localStateCmd.Parameters.AddWithValue("@pid", projectId);
+                localStateCmd.Parameters.AddWithValue("@local", LocalOwnerPlaceholderEmail);
+
+                var localIsOwner = false;
+                var localIsPending = false;
+                await using (var localReader = await localStateCmd.ExecuteReaderAsync())
+                {
+                    if (!await localReader.ReadAsync())
+                        continue;
+
+                    localIsOwner = localReader.GetBoolean(0);
+                    localIsPending = localReader.GetBoolean(1);
+                }
+
+                var currentExistsCmd = connection.CreateCommand();
+                currentExistsCmd.CommandText = @"
+SELECT 1
+FROM ProjectMember
+WHERE ProjectID = @pid AND UserEmail = @email COLLATE NOCASE
+LIMIT 1";
+                currentExistsCmd.Parameters.AddWithValue("@pid", projectId);
+                currentExistsCmd.Parameters.AddWithValue("@email", normalizedCurrentEmail);
+
+                var currentExists = await currentExistsCmd.ExecuteScalarAsync() is not null;
+                if (currentExists)
+                {
+                    var promoteCurrentCmd = connection.CreateCommand();
+                    promoteCurrentCmd.CommandText = @"
+UPDATE ProjectMember
+SET IsOwner = CASE WHEN @owner = 1 THEN 1 ELSE IsOwner END,
+    IsPending = 0
+WHERE ProjectID = @pid AND UserEmail = @email COLLATE NOCASE";
+                    promoteCurrentCmd.Parameters.AddWithValue("@owner", localIsOwner ? 1 : 0);
+                    promoteCurrentCmd.Parameters.AddWithValue("@pid", projectId);
+                    promoteCurrentCmd.Parameters.AddWithValue("@email", normalizedCurrentEmail);
+                    await promoteCurrentCmd.ExecuteNonQueryAsync();
+
+                    var deleteLocalCmd = connection.CreateCommand();
+                    deleteLocalCmd.CommandText =
+                        "DELETE FROM ProjectMember WHERE ProjectID = @pid AND UserEmail = @local COLLATE NOCASE";
+                    deleteLocalCmd.Parameters.AddWithValue("@pid", projectId);
+                    deleteLocalCmd.Parameters.AddWithValue("@local", LocalOwnerPlaceholderEmail);
+                    await deleteLocalCmd.ExecuteNonQueryAsync();
+                    continue;
+                }
+
+                var moveLocalCmd = connection.CreateCommand();
+                moveLocalCmd.CommandText = @"
+UPDATE ProjectMember
+SET UserEmail = @email,
+    IsPending = 0,
+    IsOwner = CASE WHEN @owner = 1 THEN 1 ELSE IsOwner END
+WHERE ProjectID = @pid AND UserEmail = @local COLLATE NOCASE";
+                moveLocalCmd.Parameters.AddWithValue("@email", normalizedCurrentEmail);
+                moveLocalCmd.Parameters.AddWithValue("@owner", localIsOwner ? 1 : 0);
+                moveLocalCmd.Parameters.AddWithValue("@pid", projectId);
+                moveLocalCmd.Parameters.AddWithValue("@local", LocalOwnerPlaceholderEmail);
+                await moveLocalCmd.ExecuteNonQueryAsync();
+
+                if (localIsPending)
+                {
+                    var ensureActiveCmd = connection.CreateCommand();
+                    ensureActiveCmd.CommandText = @"
+UPDATE ProjectMember
+SET IsPending = 0
+WHERE ProjectID = @pid AND UserEmail = @email COLLATE NOCASE";
+                    ensureActiveCmd.Parameters.AddWithValue("@pid", projectId);
+                    ensureActiveCmd.Parameters.AddWithValue("@email", normalizedCurrentEmail);
+                    await ensureActiveCmd.ExecuteNonQueryAsync();
+                }
+            }
         }
 
         public async Task<int> CountMembersAsync(int projectId)
@@ -140,7 +242,7 @@ CREATE TABLE IF NOT EXISTS ProjectMember (
                 return;
 
             var email = string.IsNullOrWhiteSpace(preferredEmail)
-                ? (_authService.CurrentUserEmail is { } u ? NormalizeEmail(u) : "local@owner.app")
+                ? (await _authService.GetEmailAsync() is { } u ? NormalizeEmail(u) : LocalOwnerPlaceholderEmail)
                 : NormalizeEmail(preferredEmail);
 
             await AddMemberInternalAsync(projectId, email, isOwner: true, isPending: false);
@@ -159,7 +261,7 @@ CREATE TABLE IF NOT EXISTS ProjectMember (
             if (await MemberExistsAsync(connection, projectId, normalized))
                 return;
 
-            var current = _authService.CurrentUserEmail is { } c ? NormalizeEmail(c) : null;
+            var current = await _authService.GetEmailAsync() is { } c ? NormalizeEmail(c) : null;
             var pending = current is null || !string.Equals(normalized, current, StringComparison.Ordinal);
             await InsertMemberAsync(connection, projectId, normalized, isOwner: false, isPending: pending);
         }
@@ -275,7 +377,7 @@ CREATE TABLE IF NOT EXISTS ProjectMember (
         {
             var me = _authService.CurrentUserEmail is { } e ? NormalizeEmail(e) : null;
             if (me is null)
-                return members.Any(m => m.IsOwner && m.UserEmail.Equals("local@owner.app", StringComparison.OrdinalIgnoreCase));
+                return members.Any(m => m.IsOwner && m.UserEmail.Equals(LocalOwnerPlaceholderEmail, StringComparison.OrdinalIgnoreCase));
 
             return members.Any(m => m.IsOwner && m.UserEmail.Equals(me, StringComparison.OrdinalIgnoreCase));
         }

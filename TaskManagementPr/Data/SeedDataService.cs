@@ -68,7 +68,7 @@ namespace TaskManagementPr.Data
                         }
 
                         await _projectRepository.SaveItemAsync(project);
-                        await _projectMemberRepository.EnsureOwnerAsync(project.ID, _authService.CurrentUserEmail);
+                        await _projectMemberRepository.EnsureOwnerAsync(project.ID, await _authService.GetEmailAsync());
 
                         if (project?.Tasks is not null)
                         {
