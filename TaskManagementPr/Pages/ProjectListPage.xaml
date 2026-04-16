@@ -8,7 +8,7 @@
              x:Class="TaskManagementPr.Pages.ProjectListPage"
              x:Name="ProjectList"
              x:DataType="pageModels:ProjectListPageModel"
-             Title="Projects">
+             Title="Проекты">
 
 
     <ContentPage.Behaviors>
@@ -45,7 +45,7 @@
 
         <controls:AddButton
         Command="{Binding AddProjectCommand}"
-        SemanticProperties.Description="Add project" 
-        ToolTipProperties.Text="Add project" />
+        SemanticProperties.Description="Добавить проект" 
+        ToolTipProperties.Text="Добавить проект" />
     </Grid>
 </ContentPage>

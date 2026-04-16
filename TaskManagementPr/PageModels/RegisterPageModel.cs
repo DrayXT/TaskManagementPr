@@ -57,7 +57,7 @@ namespace TaskManagementPr.PageModels
 
                 if (success)
                 {
-                    Application.Current!.Windows[0].Page = new AppShell();
+                    App.SwitchRootPage(App.CreateAppShell());
                 }
                 else
                 {

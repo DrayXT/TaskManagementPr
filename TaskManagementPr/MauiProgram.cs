@@ -51,6 +51,7 @@ namespace TaskManagementPr
             builder.Services.AddTransient<RegisterPageModel>();
             builder.Services.AddTransient<LoginPage>();
             builder.Services.AddTransient<RegisterPage>();
+            builder.Services.AddTransient<AuthShell>();
 
             builder.Services.AddSingleton<ProjectMemberRepository>();
             builder.Services.AddSingleton<ProjectRepository>();
@@ -59,14 +60,18 @@ namespace TaskManagementPr
             builder.Services.AddSingleton<TagRepository>();
             builder.Services.AddSingleton<SeedDataService>();
             builder.Services.AddSingleton<ModalErrorHandler>();
-            builder.Services.AddSingleton<MainPageModel>();
-            builder.Services.AddSingleton<ProjectListPageModel>();
-            builder.Services.AddSingleton<StatisticsPageModel>();
-            builder.Services.AddSingleton<ManageMetaPageModel>();
+            builder.Services.AddTransient<MainPageModel>();
+            builder.Services.AddTransient<ProjectListPageModel>();
+            builder.Services.AddTransient<StatisticsPageModel>();
+            builder.Services.AddTransient<ManageMetaPageModel>();
+            builder.Services.AddTransient<MainPage>();
+            builder.Services.AddTransient<ProjectListPage>();
+            builder.Services.AddTransient<ManageMetaPage>();
+            builder.Services.AddTransient<StatisticsPage>();
+            builder.Services.AddTransient<AppShell>();
 
             builder.Services.AddTransientWithShellRoute<ProjectDetailPage, ProjectDetailPageModel>("project");
             builder.Services.AddTransientWithShellRoute<TaskDetailPage, TaskDetailPageModel>("task");
-            builder.Services.AddSingleton<StatisticsPage>();
 
             return builder.Build();
         }

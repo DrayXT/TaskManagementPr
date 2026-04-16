@@ -42,6 +42,9 @@ namespace TaskManagementPr.PageModels
         private bool _canManageMembers;
 
         [ObservableProperty]
+        private bool _canEditProject;
+
+        [ObservableProperty]
         private List<Category> _categories = [];
 
         [ObservableProperty]
@@ -122,6 +125,7 @@ namespace TaskManagementPr.PageModels
                 IsCurrentUserOwner = true;
                 HasPersistedProject = false;
                 CanManageMembers = false;
+                CanEditProject = true;
             }
         }
 
@@ -138,6 +142,7 @@ namespace TaskManagementPr.PageModels
             IsCurrentUserOwner = _projectMemberRepository.IsCurrentUserOwner(_project.ID, list);
             HasPersistedProject = _project.ID > 0;
             CanManageMembers = IsCurrentUserOwner && HasPersistedProject;
+            CanEditProject = !_project.IsNullOrNew() ? IsCurrentUserOwner : true;
             CanDelete = !_project.IsNullOrNew() && IsCurrentUserOwner;
         }
 
@@ -167,12 +172,21 @@ namespace TaskManagementPr.PageModels
                 IsBusy = true;
                 var realEmail = await _authService.GetEmailAsync();
                 await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
+                var me = ProjectVisibilityRules.Normalize(realEmail) ?? ProjectVisibilityRules.LocalOwnerPlaceholderEmail;
 
                 _project = await _projectRepository.GetAsync(id);
 
                 if (_project.IsNullOrNew())
                 {
                     _errorHandler.HandleError(new Exception($"Project with id {id} could not be found."));
+                    return;
+                }
+
+                var activeMembers = _project.Members.Where(m => !m.IsPending).ToList();
+                if (!ProjectVisibilityRules.ShouldIncludeProject(me, activeMembers, _project.Tasks))
+                {
+                    _errorHandler.HandleError(new Exception("Этот проект вам недоступен."));
+                    await Shell.Current.GoToAsync("..");
                     return;
                 }
 
@@ -208,6 +222,14 @@ namespace TaskManagementPr.PageModels
         [RelayCommand]
         private async Task TaskCompleted(ProjectTask task)
         {
+            if (!IsCurrentUserOwner)
+            {
+                task.IsCompleted = !task.IsCompleted;
+                _errorHandler.HandleError(new Exception("Только владелец проекта может менять задачи этого проекта."));
+                await RefreshData();
+                return;
+            }
+
             if (task.IsCompleted)
                 TaskStatisticsPoints.ApplyCompletionDefaults(task);
 
@@ -232,8 +254,21 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
-            _project.Name = Name;
-            _project.Description = Description;
+            if (_project.ID > 0 && !IsCurrentUserOwner)
+            {
+                _errorHandler.HandleError(new Exception("Редактировать проект может только владелец."));
+                return;
+            }
+
+            var trimmedName = Name?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(trimmedName))
+            {
+                _errorHandler.HandleError(new Exception("Введите название проекта."));
+                return;
+            }
+
+            _project.Name = trimmedName;
+            _project.Description = Description?.Trim() ?? string.Empty;
             _project.CategoryID = Category?.ID ?? 0;
             _project.Icon = Icon.Icon ?? FluentUI.ribbon_24_regular;
             await _projectRepository.SaveItemAsync(_project);
@@ -267,6 +302,12 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
+            if (!IsCurrentUserOwner)
+            {
+                _errorHandler.HandleError(new Exception("Только владелец проекта может создавать задачи в этом проекте."));
+                return;
+            }
+
             await Shell.Current.GoToAsync($"task",
                 new ShellNavigationQueryParameters(){
                     {TaskDetailPageModel.ProjectQueryKey, _project}
@@ -294,8 +335,16 @@ namespace TaskManagementPr.PageModels
         }
 
         [RelayCommand]
-        private Task NavigateToTask(ProjectTask task) =>
-            Shell.Current.GoToAsync($"task?id={task.ID}");
+        private Task NavigateToTask(ProjectTask task)
+        {
+            if (!IsCurrentUserOwner)
+            {
+                _errorHandler.HandleError(new Exception("Только владелец проекта может редактировать задачи этого проекта."));
+                return Task.CompletedTask;
+            }
+
+            return Shell.Current.GoToAsync($"task?id={task.ID}");
+        }
 
         [RelayCommand]
         private void IconSelected(IconData icon)
@@ -306,6 +355,12 @@ namespace TaskManagementPr.PageModels
         [RelayCommand]
         private async Task CleanTasks()
         {
+            if (!IsCurrentUserOwner)
+            {
+                _errorHandler.HandleError(new Exception("Только владелец проекта может удалять задачи этого проекта."));
+                return;
+            }
+
             var completedTasks = Tasks.Where(t => t.IsCompleted).ToArray();
             foreach (var task in completedTasks)
             {
@@ -333,9 +388,22 @@ namespace TaskManagementPr.PageModels
             if (string.IsNullOrWhiteSpace(email))
                 return;
 
+            var normalized = email.Trim().ToLowerInvariant();
+            if (!LooksLikeEmail(normalized))
+            {
+                await page.DisplayAlertAsync("Email", "Введите корректный email участника.", "OK");
+                return;
+            }
+
+            if (Members.Any(m => m.UserEmail.Equals(normalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                await page.DisplayAlertAsync("Участник уже добавлен", "Этот email уже есть в проекте.", "OK");
+                return;
+            }
+
             try
             {
-                await _projectMemberRepository.InviteOrAddMemberAsync(_project.ID, email.Trim());
+                await _projectMemberRepository.InviteOrAddMemberAsync(_project.ID, normalized);
                 _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
                 SyncMemberUi();
                 await AppShell.DisplayToastAsync("Участник добавлен или приглашён");
@@ -356,6 +424,15 @@ namespace TaskManagementPr.PageModels
             if (page is null)
                 return;
 
+            var meRaw = await _authService.GetEmailAsync();
+            var me = meRaw?.Trim().ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(me) &&
+                member.UserEmail.Equals(me, StringComparison.OrdinalIgnoreCase))
+            {
+                await page.DisplayAlertAsync("Участник", "Чтобы выйти самому из проекта, используйте кнопку \"Покинуть проект\".", "OK");
+                return;
+            }
+
             if (member.IsOwner && Members.Count(m => m.IsOwner && !m.IsPending) <= 1)
             {
                 await page.DisplayAlertAsync("Нельзя удалить", "Сначала передайте права владельца другому участнику.", "OK");
@@ -369,6 +446,7 @@ namespace TaskManagementPr.PageModels
             await _projectMemberRepository.RemoveMemberAsync(member);
             _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
             SyncMemberUi();
+            await AppShell.DisplayToastAsync("Участник удалён");
         }
 
         [RelayCommand]
@@ -382,24 +460,41 @@ namespace TaskManagementPr.PageModels
                 return;
 
             var candidates = Members
-                .Where(m => !m.IsPending && !m.IsOwner)
-                .Select(m => m.UserEmail)
+                .Where(m => !m.IsOwner)
+                .Select(m => new
+                {
+                    m.UserEmail,
+                    Label = m.IsPending ? $"{m.UserEmail} (ещё не вошёл)" : m.UserEmail
+                })
                 .ToArray();
 
             if (candidates.Length == 0)
             {
-                await page.DisplayAlertAsync("Нет кандидатов", "Добавьте активного участника, которому можно передать права.", "OK");
+                await page.DisplayAlertAsync("Нет кандидатов", "Добавьте участника, которому можно передать права.", "OK");
                 return;
             }
 
-            var picked = await page.DisplayActionSheetAsync("Новый владелец", "Отмена", null, candidates);
+            var picked = await page.DisplayActionSheetAsync("Новый владелец", "Отмена", null, candidates.Select(c => c.Label).ToArray());
             if (picked is null || picked == "Отмена" || string.IsNullOrEmpty(picked))
                 return;
 
-            await _projectMemberRepository.TransferOwnershipAsync(_project.ID, picked);
+            var pickedEmail = candidates.FirstOrDefault(c => c.Label == picked)?.UserEmail;
+            if (string.IsNullOrWhiteSpace(pickedEmail))
+                return;
+
+            await _projectMemberRepository.TransferOwnershipAsync(_project.ID, pickedEmail);
             _project.Members = await _projectMemberRepository.ListByProjectAsync(_project.ID);
             SyncMemberUi();
             await AppShell.DisplayToastAsync("Владелец изменён");
+        }
+
+        private static bool LooksLikeEmail(string s)
+        {
+            var at = s.IndexOf('@');
+            if (at <= 0 || at >= s.Length - 1)
+                return false;
+
+            return s.AsSpan(at).Contains('.');
         }
 
         [RelayCommand]
