@@ -18,9 +18,21 @@ namespace TaskManagementPr
         protected override Window CreateWindow(IActivationState? activationState)
         {
             if (_authService.IsAuthenticated)
-                return new Window(new AppShell());
+                return new Window(CreateAppShell());
 
-            return new Window(new AuthShell());
+            return new Window(CreateAuthShell());
+        }
+
+        public static AppShell CreateAppShell() =>
+            Services.GetRequiredService<AppShell>();
+
+        public static AuthShell CreateAuthShell() =>
+            Services.GetRequiredService<AuthShell>();
+
+        public static void SwitchRootPage(Page page)
+        {
+            if (Current?.Windows.Count > 0)
+                Current.Windows[0].Page = page;
         }
     }
 }

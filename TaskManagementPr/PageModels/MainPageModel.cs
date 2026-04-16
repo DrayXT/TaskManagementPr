@@ -66,6 +66,15 @@ namespace TaskManagementPr.PageModels
             _seedDataService = seedDataService;
         }
 
+        private async Task<bool> CanManageTaskAsync(ProjectTask task)
+        {
+            if (task.ProjectID <= 0)
+                return true;
+
+            var project = await _projectRepository.GetAsync(task.ProjectID);
+            return project is not null && _projectMemberRepository.IsCurrentUserOwner(project.ID, project.Members);
+        }
+
         private async Task LoadData()
         {
             try
@@ -74,8 +83,15 @@ namespace TaskManagementPr.PageModels
 
                 var realEmail = await _authService.GetEmailAsync();
                 await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
+                var me = ProjectVisibilityRules.Normalize(realEmail) ?? ProjectVisibilityRules.LocalOwnerPlaceholderEmail;
 
-                Projects = await _projectRepository.ListAsync();
+                var allProjects = await _projectRepository.ListAsync();
+                Projects = allProjects
+                    .Where(project => ProjectVisibilityRules.ShouldIncludeProject(
+                        me,
+                        project.Members.Where(m => !m.IsPending).ToList(),
+                        project.Tasks))
+                    .ToList();
 
                 var chartData = new List<CategoryChartData>();
                 var chartColors = new List<Brush>();
@@ -94,7 +110,10 @@ namespace TaskManagementPr.PageModels
                 TodoCategoryData = chartData;
                 TodoCategoryColors = chartColors;
 
-                Tasks = await _taskRepository.ListAsync();
+                var visibleProjectIds = Projects.Select(p => p.ID).ToHashSet();
+                Tasks = (await _taskRepository.ListAsync())
+                    .Where(task => ProjectVisibilityRules.ShouldIncludeTask(me, task, visibleProjectIds))
+                    .ToList();
             }
             finally
             {
@@ -161,13 +180,20 @@ namespace TaskManagementPr.PageModels
         [RelayCommand]
         private async Task TaskCompleted(ProjectTask task)
         {
+            if (!await CanManageTaskAsync(task))
+            {
+                task.IsCompleted = !task.IsCompleted;
+                _errorHandler.HandleError(new Exception("Только владелец проекта может менять задачи этого проекта."));
+                await LoadData();
+                return;
+            }
+
             if (task.IsCompleted)
                 TaskStatisticsPoints.ApplyCompletionDefaults(task);
 
             await _taskRepository.SaveItemAsync(task);
             WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
-            OnPropertyChanged(nameof(HasCompletedTasks));
-            Tasks = await _taskRepository.ListAsync();
+            await LoadData();
         }
 
         [RelayCommand]
@@ -176,6 +202,13 @@ namespace TaskManagementPr.PageModels
             var page = Shell.Current?.CurrentPage;
             if (task is null || page is null)
                 return;
+
+            if (!await CanManageTaskAsync(task))
+            {
+                _errorHandler.HandleError(new Exception("Только владелец проекта может удалять задачи этого проекта."));
+                await LoadData();
+                return;
+            }
 
             var ok = await page.DisplayAlertAsync(
                 "Удалить задачу",
@@ -186,9 +219,8 @@ namespace TaskManagementPr.PageModels
                 return;
 
             await _taskRepository.DeleteItemAsync(task);
-            Tasks = await _taskRepository.ListAsync();
             WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
-            OnPropertyChanged(nameof(HasCompletedTasks));
+            await LoadData();
         }
 
         [RelayCommand]
@@ -207,16 +239,24 @@ namespace TaskManagementPr.PageModels
         private async Task CleanTasks()
         {
             var completedTasks = Tasks.Where(t => t.IsCompleted).ToList();
+            var blocked = false;
             foreach (var task in completedTasks)
             {
+                if (!await CanManageTaskAsync(task))
+                {
+                    blocked = true;
+                    continue;
+                }
+
                 await _taskRepository.DeleteItemAsync(task);
                 Tasks.Remove(task);
             }
 
             WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());
-            OnPropertyChanged(nameof(HasCompletedTasks));
-            Tasks = new(Tasks);
-            await AppShell.DisplayToastAsync("All cleaned up!");
+            await LoadData();
+            if (blocked)
+                _errorHandler.HandleError(new Exception("Часть завершённых задач не была удалена: ими может управлять только владелец проекта."));
+            await AppShell.DisplayToastAsync("Завершённые задачи удалены");
         }
     }
 }

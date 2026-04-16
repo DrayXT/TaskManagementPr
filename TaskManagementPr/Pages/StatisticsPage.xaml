@@ -42,8 +42,8 @@
                 </Label.FormattedText>
             </Label>
 
-            <Label Text="Мои проекты и исполнители" Style="{StaticResource Title2}" Margin="0,12,0,0" />
-            <Label Text="Показываются только проекты, в которых вы участвуете или назначены на задачи."
+            <Label Text="Командная статистика" Style="{StaticResource Title2}" Margin="0,12,0,0" />
+            <Label Text="Учитываются только общие проекты (2+ активных участника), в которых вы участвуете."
                    FontSize="13" LineBreakMode="WordWrap"
                    TextColor="{AppThemeBinding Light=#555,Dark=#bbb}" />
             <Label>
@@ -63,7 +63,7 @@
                 </Label.FormattedText>
             </Label>
 
-            <Label Text="Участники проектов" Style="{StaticResource Title2}" Margin="0,16,0,0" />
+            <Label Text="Участники общих проектов" Style="{StaticResource Title2}" Margin="0,16,0,0" />
             <CollectionView ItemsSource="{Binding SharedProjects}" EmptyView="Нет проектов">
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="pageModels:SharedProjectRow">

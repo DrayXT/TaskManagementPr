@@ -6,11 +6,18 @@
              xmlns:pages="clr-namespace:TaskManagementPr.Pages"
              xmlns:sf="clr-namespace:Syncfusion.Maui.Toolkit.TextInputLayout;assembly=Syncfusion.Maui.Toolkit"
              xmlns:controls="clr-namespace:TaskManagementPr.Pages.Controls"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
              xmlns:fonts="clr-namespace:Fonts"
              x:Class="TaskManagementPr.Pages.ProjectDetailPage"
              x:Name="ProjectRoot"
              x:DataType="pageModels:ProjectDetailPageModel"
              Title="Проект">
+
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <toolkit:InvertedBoolConverter x:Key="InvertedBoolConverter" />
+        </ResourceDictionary>
+    </ContentPage.Resources>
 
     <ContentPage.ToolbarItems>
         <ToolbarItem
@@ -26,33 +33,44 @@
         <ScrollView>
             <VerticalStackLayout Padding="{StaticResource LayoutPadding}" Spacing="{StaticResource LayoutSpacing}">
                 <sf:SfTextInputLayout 
-                    Hint="Name" >
+                    Hint="Название проекта" >
                     <Entry
-                        Text="{Binding Name}" SemanticProperties.Description="Name" />
+                        Text="{Binding Name}"
+                        IsEnabled="{Binding CanEditProject}"
+                        SemanticProperties.Description="Название проекта" />
                 </sf:SfTextInputLayout>
 
                 <sf:SfTextInputLayout 
-                    Hint="Description">
+                    Hint="Описание">
                     <Entry
-                        Text="{Binding Description}" SemanticProperties.Description="Description" />
+                        Text="{Binding Description}"
+                        IsEnabled="{Binding CanEditProject}"
+                        SemanticProperties.Description="Описание проекта" />
                 </sf:SfTextInputLayout>
 
                <sf:SfTextInputLayout
-                    Hint="Category"
-                    SemanticProperties.Description="ComboBox to Select Category"
-                    SemanticProperties.Hint="State Collapsed">
-                    <Picker SemanticProperties.Hint="Select the category for the project"
+                    Hint="Категория"
+                    SemanticProperties.Description="Выбор категории проекта"
+                    SemanticProperties.Hint="Список категорий">
+                    <Picker SemanticProperties.Hint="Выберите категорию проекта"
                             ItemsSource="{Binding Categories}"
                             SelectedItem="{Binding Category}"
                             SelectedIndex="{Binding CategoryIndex}"
-                            SemanticProperties.Description="Category State Expanded"/>
+                            IsEnabled="{Binding CanEditProject}"
+                            SemanticProperties.Description="Категория проекта"/>
                 </sf:SfTextInputLayout>
 
                 <Label 
-                    Text="Icon" 
+                    Text="Иконка" 
                     Style="{StaticResource Title2}"/>
+                <Label Text="Редактировать проект может только владелец."
+                       FontSize="13"
+                       LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light=#555555,Dark=#bbbbbb}"
+                       IsVisible="{Binding CanEditProject, Converter={StaticResource InvertedBoolConverter}}" />
                 <CollectionView 
                     HeightRequest="44" Margin="0,0,0,15"
+                    IsEnabled="{Binding CanEditProject}"
                     SelectionMode="Single" 
                     SelectedItem="{Binding Icon}"
                     SelectionChangedCommand="{Binding IconSelectedCommand}"
@@ -98,7 +116,8 @@
                 </CollectionView>
                 <Button Text="Сохранить проект"
                     MinimumHeightRequest="{OnIdiom 44, Desktop=60}"
-                    Command="{Binding SaveCommand}" />
+                    Command="{Binding SaveCommand}"
+                    IsEnabled="{Binding CanEditProject}" />
 
                 <Label Text="Участники проекта" Style="{StaticResource Title2}" />
                 <CollectionView ItemsSource="{Binding Members}" MaximumHeightRequest="280">
@@ -124,7 +143,7 @@
                        IsVisible="{Binding CanManageMembers}" />
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="{Binding CanManageMembers}">
                     <Button Grid.Column="0" Text="Пригласить" Command="{Binding InviteMemberCommand}" />
-                    <Button Grid.Column="1" Text="Передать владельца" Command="{Binding TransferOwnershipCommand}" />
+                    <Button Grid.Column="1" Text="Передать права владельца" Command="{Binding TransferOwnershipCommand}" />
                 </Grid>
 
                 <Button Text="Покинуть проект"
@@ -133,7 +152,7 @@
 
                 <Grid HeightRequest="44">
                     <Label 
-                        Text="Tasks" 
+                        Text="Задачи" 
                         Style="{StaticResource Title2}" 
                         VerticalOptions="Center"/>
                     <ImageButton 
@@ -160,9 +179,10 @@
             </VerticalStackLayout>
         </ScrollView>
 
-        <controls:AddButton Command="{Binding AddTaskCommand}" 
-                            SemanticProperties.Description="Add task" 
-                            ToolTipProperties.Text="Add task" />
+        <controls:AddButton Command="{Binding AddTaskCommand}"
+                            IsVisible="{Binding IsCurrentUserOwner}"
+                            SemanticProperties.Description="Добавить задачу"
+                            ToolTipProperties.Text="Добавить задачу" />
     </Grid>
     
 </ContentPage>

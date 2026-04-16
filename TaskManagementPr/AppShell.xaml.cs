@@ -61,7 +61,7 @@ namespace TaskManagementPr
 
             var authService = App.Services.GetRequiredService<IAuthService>();
             await authService.SignOutAsync();
-            Application.Current!.Windows[0].Page = new AuthShell();
+            App.SwitchRootPage(App.CreateAuthShell());
         }
     }
 }

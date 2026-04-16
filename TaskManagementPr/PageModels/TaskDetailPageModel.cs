@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using TaskManagementPr.Data;
 using TaskManagementPr.Messaging;
 using TaskManagementPr.Models;
+using TaskManagementPr.Services;
 
 namespace TaskManagementPr.PageModels
 {
@@ -15,6 +16,7 @@ namespace TaskManagementPr.PageModels
         private bool _canDelete;
         private readonly ProjectRepository _projectRepository;
         private readonly TaskRepository _taskRepository;
+        private readonly ProjectMemberRepository _projectMemberRepository;
         private readonly ModalErrorHandler _errorHandler;
 
         [ObservableProperty]
@@ -66,10 +68,12 @@ namespace TaskManagementPr.PageModels
         public TaskDetailPageModel(
             ProjectRepository projectRepository,
             TaskRepository taskRepository,
+            ProjectMemberRepository projectMemberRepository,
             ModalErrorHandler errorHandler)
         {
             _projectRepository = projectRepository;
             _taskRepository = taskRepository;
+            _projectMemberRepository = projectMemberRepository;
             _errorHandler = errorHandler;
 
             PriorityOptions =
@@ -124,17 +128,17 @@ namespace TaskManagementPr.PageModels
                 _task = new ProjectTask();
             }
 
-            if (Project?.ID == 0)
+            if (Project is not null && Project.ID > 0 && !await CanManageProjectTasksAsync(Project.ID))
             {
-                IsExistingProject = false;
+                _errorHandler.HandleError(new Exception("Только владелец проекта может создавать и редактировать задачи в этом проекте."));
+                if (Shell.Current is not null)
+                    await Shell.Current.GoToAsync("..");
+                return;
             }
-            else
-            {
-                var dbProjects = await _projectRepository.ListAsync();
-                var unassigned = new Project { ID = 0, Name = "Без проекта" };
-                Projects = [unassigned, ..dbProjects];
-                IsExistingProject = true;
-            }
+
+            var ownedProjects = await LoadOwnedProjectsAsync();
+            Projects = [new Project { ID = 0, Name = "Без проекта" }, ..ownedProjects];
+            IsExistingProject = true;
 
             if (Projects.Count > 0)
             {
@@ -186,6 +190,23 @@ namespace TaskManagementPr.PageModels
             }
 
             RefreshPointsHint();
+        }
+
+        private async Task<List<Project>> LoadOwnedProjectsAsync()
+        {
+            var dbProjects = await _projectRepository.ListAsync();
+            return dbProjects
+                .Where(project => _projectMemberRepository.IsCurrentUserOwner(project.ID, project.Members))
+                .ToList();
+        }
+
+        private async Task<bool> CanManageProjectTasksAsync(int projectId)
+        {
+            if (projectId <= 0)
+                return true;
+
+            var project = await _projectRepository.GetAsync(projectId);
+            return project is not null && _projectMemberRepository.IsCurrentUserOwner(projectId, project.Members);
         }
 
         partial void OnRewardBudgetMaxTextChanged(string value) =>
@@ -331,6 +352,13 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
+            var trimmedTitle = Title?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(trimmedTitle))
+            {
+                await ShowMessageAsync("Название задачи", "Введите название задачи.");
+                return;
+            }
+
             var max = ParseBudgetMax();
             var sum = AssignedExecutors.Sum(r => r.GetParsedPoints());
             if (sum > max)
@@ -341,7 +369,7 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
-            _task.Title = Title;
+            _task.Title = trimmedTitle;
             _task.Description = Description?.Trim() ?? string.Empty;
             _task.IsCompleted = IsCompleted;
             _task.RewardPoints = max;
@@ -353,6 +381,12 @@ namespace TaskManagementPr.PageModels
                 var p = Projects[SelectedProjectIndex];
                 _task.ProjectID = p.ID;
                 Project = p;
+            }
+
+            if (_task.ProjectID > 0 && !await CanManageProjectTasksAsync(_task.ProjectID))
+            {
+                await ShowMessageAsync("Права доступа", "Только владелец проекта может создавать и редактировать задачи в этом проекте.");
+                return;
             }
 
             _task.AssigneePointShares.Clear();
@@ -391,6 +425,12 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
+            if (_task.ProjectID > 0 && !await CanManageProjectTasksAsync(_task.ProjectID))
+            {
+                await ShowMessageAsync("Права доступа", "Только владелец проекта может удалять задачи этого проекта.");
+                return;
+            }
+
             if (Project?.Tasks is not null && Project.Tasks.Contains(_task))
                 Project.Tasks.Remove(_task);
 
@@ -412,12 +452,15 @@ namespace TaskManagementPr.PageModels
                 return;
             }
 
+            if (_task.ProjectID > 0 && !await CanManageProjectTasksAsync(_task.ProjectID))
+            {
+                await ShowMessageAsync("Права доступа", "Только владелец проекта может убирать задачу из проекта.");
+                return;
+            }
+
             _task.ProjectID = 0;
             Project = Projects.FirstOrDefault(p => p.ID == 0);
             SelectedProjectIndex = Projects.FindIndex(p => p.ID == 0);
-            AssignedExecutors.Clear();
-            _task.AssigneeEmails.Clear();
-            _task.AssigneePointShares.Clear();
             RefreshPointsHint();
             await _taskRepository.SaveItemAsync(_task);
             WeakReferenceMessenger.Default.Send(new TaskDataChangedMessage());

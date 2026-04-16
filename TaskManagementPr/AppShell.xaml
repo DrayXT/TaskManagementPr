@@ -9,13 +9,13 @@
     Title="TaskManagementPr">
 
     <ShellContent
-        Title="Dashboard"
+        Title="Главная"
         Icon="{StaticResource IconDashboard}"
         ContentTemplate="{DataTemplate pages:MainPage}"
         Route="main" />
 
     <ShellContent
-        Title="Projects"
+        Title="Проекты"
         Icon="{StaticResource IconProjects}"
         ContentTemplate="{DataTemplate pages:ProjectListPage}"
         Route="projects" />
@@ -27,7 +27,7 @@
         Route="statistics" />
 
     <ShellContent
-        Title="Manage Meta"
+        Title="Справочники"
         Icon="{StaticResource IconMeta}"
         ContentTemplate="{DataTemplate pages:ManageMetaPage}"
         Route="manage" />

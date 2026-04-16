@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using TaskManagementPr.Data;
 using TaskManagementPr.Models;
 using TaskManagementPr.Services;
+using TaskManagementPr.Utilities;
 
 namespace TaskManagementPr.PageModels
 {
@@ -33,7 +34,14 @@ namespace TaskManagementPr.PageModels
         {
             var realEmail = await _authService.GetEmailAsync();
             await _projectMemberRepository.ActivatePendingForEmailAsync(realEmail);
-            Projects = await _projectRepository.ListAsync();
+            var me = ProjectVisibilityRules.Normalize(realEmail) ?? ProjectVisibilityRules.LocalOwnerPlaceholderEmail;
+            var allProjects = await _projectRepository.ListAsync();
+            Projects = allProjects
+                .Where(project => ProjectVisibilityRules.ShouldIncludeProject(
+                    me,
+                    project.Members.Where(m => !m.IsPending).ToList(),
+                    project.Tasks))
+                .ToList();
         }
 
         [RelayCommand]
